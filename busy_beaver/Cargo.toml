@@ -1,0 +1,16 @@
+[package]
+name = "busy_beaver"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# iai-callgrind = "0.14.0"
+
+[profile.release]
+debug = true
+overflow-checks = false
+opt-level = 3
+codegen-units = 1
+debug-assertions = false
+lto = true
+

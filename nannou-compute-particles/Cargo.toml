@@ -1,0 +1,29 @@
+[package]
+name = "phys"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# bevy = { version = "0.14.1", features = ["dynamic_linking"] }
+fastrand = "2.1.1"
+# iyes_perf_ui = "0.3.0"
+# bevy_flycam = "0.14.1"
+nannou = "*"
+bytemuck = {version="1.18.0", features = ["derive"]}
+flume = "0.11.0"
+# nalgebra = "0.33.0"
+
+# [patch.crates-io]
+# wgpu = { path = "../wgpu/wgpu" }
+# wgpu-core = { path = "../wgpu/wgpu-core" }
+# wgpu-macros = { path = "../wgpu/wgpu-macros" }
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+
+[profile.release]
+debug = true

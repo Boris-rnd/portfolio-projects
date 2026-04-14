@@ -1,0 +1,4 @@
+Attemping busy beaver 1... Done in 8.9µs (16, 556ns/machine)
+Attemping busy beaver 2... Done in 3.9011ms (4096, 952ns/machine)
+Attemping busy beaver 3... Done in 10.7850865s (2985984, 3611ns/machine)
+Theory: busy beaver 4... Done in 4 hours !

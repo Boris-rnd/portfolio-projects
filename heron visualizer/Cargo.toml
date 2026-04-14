@@ -1,0 +1,23 @@
+[package]
+name = "fractal-visualizer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+iyes_perf_ui = "0.5.0"
+log = { version = "*", features = [
+    "max_level_debug",
+    "release_max_level_warn",
+] }
+bevy = { version = "0.17.2", features = ["file_watcher"] }
+rug = "1.28.0"
+
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+debug = true
