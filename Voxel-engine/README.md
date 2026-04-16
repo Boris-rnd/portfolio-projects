@@ -2,7 +2,8 @@
 
 This is a simple wgpu project
 Supports multiple pipelines, keyboard input, basic ui system
-![[preview.png]]
+Some 3D, custom wgpu functions, ...
+![preview](preview.png)
 
 ## TODO
 
