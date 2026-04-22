@@ -1,0 +1,37 @@
+[package]
+name = "cuneus"
+version = "0.4.9"
+edition = "2021"
+authors = ["altunenes"]
+description = "A WGPU-based shader development tool"
+license = "MIT"
+repository = "https://github.com/altunenes/cuneus"
+readme = "readme.md"
+keywords = ["graphics", "wgpu", "shaders", "gpu"]
+categories = ["graphics", "rendering"]
+
+[dependencies]
+wgpu = "29.0.1"
+winit = "0.30.12"
+bytemuck = { version = "1.23.2", features = ["derive"] }
+egui-wgpu = "0.34.0"
+egui = "0.34.0"
+egui-winit = "0.34.0"
+image = { version = "0.25.8", features = ["png", "hdr","exr"] }
+env_logger = "0.11.6"
+pollster = "0.4.0"
+rfd = "0.15.1"
+notify = "8.2.0"
+gstreamer = { version = "0.25.0", optional = true }
+gstreamer-video = { version = "0.25.0", optional = true }
+gstreamer-app = { version = "0.25.0", optional = true }
+gstreamer-pbutils = { version = "0.25.0", optional = true }
+anyhow = "1.0.96"
+log = "0.4.25"
+ply-rs-bw = "=2.0.3"
+
+[features]
+default = ["media"]
+media = ["gstreamer", "gstreamer-video", "gstreamer-app", "gstreamer-pbutils"]
+
+[dev-dependencies]

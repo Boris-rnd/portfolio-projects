@@ -1,0 +1,64 @@
+[package]
+name = "initerse"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = { version = "0.18", features = [
+    "bevy_asset",
+    "bevy_core_pipeline",
+    "bevy_render",
+    "bevy_sprite",
+    "bevy_text",
+    "bevy_ui",
+    "bevy_window",
+    "bevy_winit",
+    "bevy_color",
+    "multi_threaded",
+    "hdr",
+    "tonemapping_luts",
+    "bevy_state",
+    "bevy_gizmos",
+] }
+rand = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = { version = "0.1", features = [
+    "max_level_debug",
+    "release_max_level_warn",
+] }
+bevy-inspector-egui = "0.36.0"
+
+noise = "0.9"
+
+[target.wasm32-unknown-unknown.dependencies]
+getrandom = { version = "0.4.2", features = ["wasm_js"] }
+
+[features]
+default = ["dev_native"]
+dev = [
+    "bevy/dynamic_linking", # Using mold
+    "bevy/bevy_dev_tools",
+]
+dev_native = ["dev", "bevy/file_watcher", "bevy/embedded_watcher"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(bevy_lint)"] }
+
+[lints.clippy]
+too_many_arguments = "allow"
+type_complexity = "allow"
+nonstandard_macro_braces = "warn"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.dev.package.wgpu-types]
+debug-assertions = false
+
+[profile.release]
+codegen-units = 1
+lto = "thin"

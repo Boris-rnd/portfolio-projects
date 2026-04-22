@@ -1,0 +1,20 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "bootloader/bootstrap"
+		},
+		{
+			"path": "bootloader/stage_one"
+		},
+		{
+			"path": "bootloader/stage_two"
+		},
+		{
+			"path": "builder"
+		}
+	],
+	"settings": {}
+}

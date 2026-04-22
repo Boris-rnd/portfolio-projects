@@ -1,0 +1,40 @@
+{
+  "config": {
+    "seed": 1337,
+    "enemy_spawn_rate": 4.0,
+    "enemy_health": 6.0,
+    "gold_node_frequency": 0.25,
+    "building_health": 150.0
+  },
+  "total_gold": 70.0,
+  "buildings": [
+    {
+      "kind": "Base",
+      "grid_x": 0,
+      "grid_y": 0,
+      "storage_amount": 70.0,
+      "connection_targets": []
+    },
+    {
+      "kind": "Turret",
+      "grid_x": -2,
+      "grid_y": -2,
+      "storage_amount": null,
+      "connection_targets": []
+    },
+    {
+      "kind": "Turret",
+      "grid_x": 2,
+      "grid_y": -1,
+      "storage_amount": null,
+      "connection_targets": []
+    },
+    {
+      "kind": "Turret",
+      "grid_x": 0,
+      "grid_y": 2,
+      "storage_amount": null,
+      "connection_targets": []
+    }
+  ]
+}

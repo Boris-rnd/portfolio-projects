@@ -1,0 +1,8 @@
+[package]
+name = "builder"
+version = "0.1.0"
+edition = "2021"
+default-run = "builder"
+
+[dependencies]
+ovmf-prebuilt = "0.1.0-alpha.1"

@@ -1,0 +1,18 @@
+cargo-features = ["per-package-target"]
+[package]
+name = "stage_two"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+uart_16550 = "*"
+
+[profile.dev]
+strip = true
+opt-level = "s"
+panic = "abort" 
+
+[profile.release]
+strip = true
+opt-level = "s"
+panic = "abort" 

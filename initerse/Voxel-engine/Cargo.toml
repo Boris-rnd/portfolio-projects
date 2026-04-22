@@ -1,0 +1,32 @@
+[package]
+name = "easy-wgpu"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+testing = []
+
+[dependencies]
+winit = { version = "0.29", features = ["rwh_05", "rwh_06", "wayland", "x11"], default-features = false}
+env_logger = "0.10"
+log = "0.4"
+wgpu = "22.0"
+pollster = "0.3"
+bytemuck = {version="1.17.0", features = ["derive"]}
+anyhow = "1.0.86"
+wgpu-profiler = "0.18.0"
+flume = "0.11.0"
+encase = "0.9.0"
+ttf-parser = "0.24.1"
+noise = "0.9.0"
+
+[dependencies.image]
+version = "0.25.2"
+default-features = false
+features = ["png", "jpeg"]
+
+# Flamegraph profile
+[profile.flame]
+inherits = "release"
+debug = true

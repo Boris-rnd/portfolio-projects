@@ -1,0 +1,24 @@
+[package]
+name = "bootstrap"
+version = "0.1.0"
+edition = "2021"
+
+[profile.release]
+debug = false
+lto = true
+overflow-checks = false
+debug-assertions = false
+codegen-units = 1
+strip = true
+opt-level = "s"
+panic = "abort"
+
+[profile.dev]
+debug = false
+lto = true
+overflow-checks = false
+debug-assertions = false
+codegen-units = 1
+strip = true
+opt-level = "s"
+panic = "abort"

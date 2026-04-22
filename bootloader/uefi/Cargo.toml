@@ -1,0 +1,17 @@
+[workspace]
+members = [
+    "builder",
+    "bootloader",
+]
+
+resolver = "2"
+
+
+[profile.dev]
+opt-level = 0
+
+[profile.release]
+strip = true
+lto = true
+opt-level = "s"
+panic = "abort"

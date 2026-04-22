@@ -1,0 +1,41 @@
+[gd_scene load_steps=4 format=3 uid="uid://bxwfedohdifo4"]
+
+[ext_resource type="Script" uid="uid://d1lhibgh46sks" path="res://Resources/simulation.gd" id="1_bsl6s"]
+[ext_resource type="Shader" uid="uid://cfs3db8wle2au" path="res://Resources/simulation.gdshader" id="2_60yvg"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_fyx5e"]
+shader = ExtResource("2_60yvg")
+
+[node name="Node2D" type="Node2D"]
+script = ExtResource("1_bsl6s")
+
+[node name="Control" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ColorRect" type="ColorRect" parent="."]
+material = SubResource("ShaderMaterial_fyx5e")
+custom_minimum_size = Vector2(18.74, 0)
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 1922.0
+offset_bottom = 1075.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Label" type="Label" parent="."]
+layout_direction = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_right = 1922.0
+offset_bottom = 187.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(0, 0, 0, 1)
+theme_override_font_sizes/font_size = 126
+text = "Simulation"
+horizontal_alignment = 1

@@ -1,0 +1,254 @@
+; SPIR-V
+; Version: 1.1
+; Generator: rspirv
+; Bound: 220
+OpCapability Shader
+OpCapability Linkage
+%1 = OpExtInstImport "GLSL.std.450"
+OpMemoryModel Logical GLSL450
+OpDecorate %10 ArrayStride 4
+OpDecorate %12 ArrayStride 4
+%2 = OpTypeVoid
+%3 = OpTypeInt 32 1
+%4 = OpTypeVector %3 2
+%5 = OpTypeInt 32 0
+%6 = OpTypeVector %5 2
+%7 = OpTypeFloat 32
+%8 = OpTypeVector %7 2
+%9 = OpTypeMatrix %8 2
+%11 = OpConstant  %5  2
+%10 = OpTypeArray %7 %11
+%12 = OpTypeArray %3 %11
+%13 = OpConstant  %3  42
+%14 = OpConstant  %3  43
+%15 = OpConstantComposite  %4  %13 %14
+%16 = OpConstant  %5  44
+%17 = OpConstant  %5  45
+%18 = OpConstantComposite  %6  %16 %17
+%19 = OpConstant  %7  46.0
+%20 = OpConstant  %7  47.0
+%21 = OpConstantComposite  %8  %19 %20
+%22 = OpConstant  %5  42
+%23 = OpConstant  %5  43
+%24 = OpConstantComposite  %6  %22 %23
+%25 = OpConstant  %7  1.0
+%26 = OpConstant  %7  2.0
+%27 = OpConstantComposite  %8  %25 %26
+%28 = OpConstant  %7  3.0
+%29 = OpConstant  %7  4.0
+%30 = OpConstantComposite  %8  %28 %29
+%31 = OpConstantComposite  %9  %27 %30
+%32 = OpConstant  %3  1
+%33 = OpConstantComposite  %4  %32 %32
+%34 = OpConstantComposite  %8  %25 %25
+%35 = OpConstant  %5  1
+%36 = OpConstantComposite  %6  %35 %35
+%37 = OpConstantComposite  %10  %25 %26
+%38 = OpConstant  %3  2
+%39 = OpConstantComposite  %12  %32 %38
+%41 = OpTypePointer Private %4
+%40 = OpVariable  %41  Private %15
+%43 = OpTypePointer Private %6
+%42 = OpVariable  %43  Private %18
+%45 = OpTypePointer Private %8
+%44 = OpVariable  %45  Private %21
+%46 = OpVariable  %43  Private %24
+%47 = OpVariable  %43  Private %24
+%48 = OpVariable  %43  Private %24
+%49 = OpVariable  %43  Private %24
+%51 = OpTypePointer Private %9
+%50 = OpVariable  %51  Private %31
+%52 = OpVariable  %51  Private %31
+%53 = OpVariable  %51  Private %31
+%54 = OpVariable  %51  Private %31
+%55 = OpVariable  %51  Private %31
+%56 = OpVariable  %41  Private %33
+%57 = OpVariable  %45  Private %34
+%58 = OpVariable  %41  Private %33
+%59 = OpVariable  %43  Private %36
+%60 = OpVariable  %45  Private %34
+%61 = OpVariable  %45  Private %34
+%63 = OpTypePointer Private %10
+%62 = OpVariable  %63  Private %37
+%64 = OpVariable  %63  Private %37
+%66 = OpTypePointer Private %12
+%65 = OpVariable  %66  Private %39
+%67 = OpVariable  %63  Private %37
+%68 = OpVariable  %63  Private %37
+%69 = OpVariable  %63  Private %37
+%70 = OpVariable  %41  Private %33
+%71 = OpVariable  %45  Private %34
+%72 = OpVariable  %41  Private %33
+%73 = OpVariable  %43  Private %36
+%74 = OpVariable  %45  Private %34
+%75 = OpVariable  %45  Private %34
+%76 = OpVariable  %63  Private %37
+%77 = OpVariable  %63  Private %37
+%78 = OpVariable  %63  Private %37
+%79 = OpVariable  %63  Private %37
+%80 = OpVariable  %63  Private %37
+%83 = OpTypeFunction %2
+%85 = OpTypePointer Function %4
+%87 = OpTypePointer Function %6
+%89 = OpTypePointer Function %8
+%95 = OpTypePointer Function %9
+%111 = OpTypePointer Function %10
+%116 = OpTypePointer Function %12
+%127 = OpTypePointer Function %5
+%128 = OpConstantNull  %5
+%130 = OpTypePointer Function %3
+%131 = OpConstantNull  %3
+%133 = OpTypePointer Function %7
+%134 = OpConstantNull  %7
+%136 = OpConstantNull  %6
+%138 = OpConstantNull  %6
+%140 = OpConstantNull  %6
+%142 = OpConstantNull  %6
+%144 = OpConstantNull  %9
+%146 = OpConstantNull  %9
+%148 = OpConstantNull  %9
+%150 = OpConstantNull  %9
+%152 = OpConstantNull  %10
+%154 = OpConstantNull  %10
+%156 = OpConstantNull  %10
+%158 = OpConstantNull  %10
+%160 = OpConstantNull  %12
+%162 = OpConstantNull  %12
+%164 = OpConstantNull  %10
+%166 = OpConstantNull  %10
+%168 = OpConstantNull  %10
+%170 = OpConstantNull  %10
+%172 = OpConstantNull  %12
+%174 = OpConstantNull  %12
+%82 = OpFunction  %2  None %83
+%81 = OpLabel
+%120 = OpVariable  %111  Function %37
+%117 = OpVariable  %116  Function %39
+%113 = OpVariable  %111  Function %37
+%109 = OpVariable  %89  Function %34
+%106 = OpVariable  %85  Function %33
+%103 = OpVariable  %95  Function %31
+%100 = OpVariable  %95  Function %31
+%97 = OpVariable  %95  Function %31
+%93 = OpVariable  %87  Function %24
+%90 = OpVariable  %87  Function %24
+%84 = OpVariable  %85  Function %15
+%121 = OpVariable  %111  Function %37
+%118 = OpVariable  %116  Function %39
+%114 = OpVariable  %111  Function %37
+%110 = OpVariable  %111  Function %37
+%107 = OpVariable  %87  Function %36
+%104 = OpVariable  %85  Function %33
+%101 = OpVariable  %95  Function %31
+%98 = OpVariable  %95  Function %31
+%94 = OpVariable  %95  Function %31
+%91 = OpVariable  %87  Function %24
+%86 = OpVariable  %87  Function %18
+%122 = OpVariable  %111  Function %37
+%119 = OpVariable  %111  Function %37
+%115 = OpVariable  %116  Function %39
+%112 = OpVariable  %111  Function %37
+%108 = OpVariable  %89  Function %34
+%105 = OpVariable  %89  Function %34
+%102 = OpVariable  %95  Function %31
+%99 = OpVariable  %95  Function %31
+%96 = OpVariable  %95  Function %31
+%92 = OpVariable  %87  Function %24
+%88 = OpVariable  %89  Function %21
+OpBranch %123
+%123 = OpLabel
+OpReturn
+OpFunctionEnd
+%125 = OpFunction  %2  None %83
+%124 = OpLabel
+%173 = OpVariable  %116  Function %174
+%167 = OpVariable  %111  Function %168
+%161 = OpVariable  %116  Function %162
+%155 = OpVariable  %111  Function %156
+%149 = OpVariable  %95  Function %150
+%143 = OpVariable  %95  Function %144
+%137 = OpVariable  %87  Function %138
+%129 = OpVariable  %130  Function %131
+%171 = OpVariable  %116  Function %172
+%165 = OpVariable  %111  Function %166
+%159 = OpVariable  %116  Function %160
+%153 = OpVariable  %111  Function %154
+%147 = OpVariable  %95  Function %148
+%141 = OpVariable  %87  Function %142
+%135 = OpVariable  %87  Function %136
+%126 = OpVariable  %127  Function %128
+%169 = OpVariable  %111  Function %170
+%163 = OpVariable  %111  Function %164
+%157 = OpVariable  %111  Function %158
+%151 = OpVariable  %111  Function %152
+%145 = OpVariable  %95  Function %146
+%139 = OpVariable  %87  Function %140
+%132 = OpVariable  %133  Function %134
+OpBranch %175
+%175 = OpLabel
+%176 = OpLoad  %5  %126
+%177 = OpCompositeConstruct  %6  %176 %23
+OpStore %135 %177
+%178 = OpLoad  %5  %126
+%179 = OpCompositeConstruct  %6  %22 %178
+OpStore %137 %179
+%180 = OpLoad  %5  %126
+%181 = OpCompositeConstruct  %6  %180 %23
+OpStore %139 %181
+%182 = OpLoad  %5  %126
+%183 = OpCompositeConstruct  %6  %22 %182
+OpStore %141 %183
+%184 = OpLoad  %7  %132
+%185 = OpCompositeConstruct  %8  %184 %26
+%186 = OpCompositeConstruct  %9  %185 %30
+OpStore %143 %186
+%187 = OpLoad  %7  %132
+%188 = OpCompositeConstruct  %8  %25 %187
+%189 = OpCompositeConstruct  %9  %188 %30
+OpStore %145 %189
+%190 = OpLoad  %7  %132
+%191 = OpCompositeConstruct  %8  %190 %29
+%192 = OpCompositeConstruct  %9  %27 %191
+OpStore %147 %192
+%193 = OpLoad  %7  %132
+%194 = OpCompositeConstruct  %8  %28 %193
+%195 = OpCompositeConstruct  %9  %27 %194
+OpStore %149 %195
+%196 = OpLoad  %7  %132
+%197 = OpCompositeConstruct  %10  %196 %26
+OpStore %151 %197
+%198 = OpLoad  %7  %132
+%199 = OpCompositeConstruct  %10  %25 %198
+OpStore %153 %199
+%200 = OpLoad  %7  %132
+%201 = OpCompositeConstruct  %10  %200 %26
+OpStore %155 %201
+%202 = OpLoad  %7  %132
+%203 = OpCompositeConstruct  %10  %25 %202
+OpStore %157 %203
+%204 = OpLoad  %3  %129
+%205 = OpCompositeConstruct  %12  %204 %38
+OpStore %159 %205
+%206 = OpLoad  %3  %129
+%207 = OpCompositeConstruct  %12  %32 %206
+OpStore %161 %207
+%208 = OpLoad  %7  %132
+%209 = OpCompositeConstruct  %10  %208 %26
+OpStore %163 %209
+%210 = OpLoad  %7  %132
+%211 = OpCompositeConstruct  %10  %25 %210
+OpStore %165 %211
+%212 = OpLoad  %7  %132
+%213 = OpCompositeConstruct  %10  %212 %26
+OpStore %167 %213
+%214 = OpLoad  %7  %132
+%215 = OpCompositeConstruct  %10  %25 %214
+OpStore %169 %215
+%216 = OpLoad  %3  %129
+%217 = OpCompositeConstruct  %12  %216 %38
+OpStore %171 %217
+%218 = OpLoad  %3  %129
+%219 = OpCompositeConstruct  %12  %32 %218
+OpStore %173 %219
+OpReturn
+OpFunctionEnd

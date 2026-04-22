@@ -1,0 +1,25 @@
+[package]
+authors = ["Federico Rinaldi <gisquerin@gmail.com>"]
+categories = ["game-engines", "graphics", "rendering"]
+description = "Draw 2D shapes and paths in the Bevy game engine."
+edition = "2021"
+keywords = ["game", "shapes", "gamedev", "graphics", "bevy"]
+license = "MIT OR Apache-2.0"
+name = "bevy_prototype_lyon"
+readme = "README.md"
+repository = "https://github.com/Nilirad/bevy_prototype_lyon/"
+version = "0.14.0"
+
+[dependencies]
+bevy = { version = "0.16.0", default-features = false, features = [
+	"bevy_sprite",
+	"bevy_render",
+	"bevy_core_pipeline",
+	"bevy_asset",
+] }
+lyon_tessellation = "1"
+lyon_algorithms = "1"
+svgtypes = "0.15"
+
+[dev-dependencies]
+bevy = "0.16.0"

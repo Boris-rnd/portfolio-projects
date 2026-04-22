@@ -1,0 +1,131 @@
+[gd_scene load_steps=8 format=3 uid="uid://lj23epjsyl8q"]
+
+[ext_resource type="Script" uid="uid://dytx8ywwn5wv7" path="res://Resources/Tutorial.gd" id="2_g6b55"]
+[ext_resource type="Script" uid="uid://c7dy6o6foctw5" path="res://Resources/Building.gd" id="3_eltko"]
+[ext_resource type="Script" uid="uid://g1exwllcrage" path="res://Resources/Hotbar.gd" id="3_ixlx2"]
+[ext_resource type="Script" uid="uid://4jcn46qguhl2" path="res://Resources/world.gd" id="4_bwkcf"]
+[ext_resource type="Texture2D" uid="uid://uj5f134qhqhp" path="res://Resources/main_math_base.png" id="4_ijwug"]
+[ext_resource type="Script" uid="uid://d336ive8wecmu" path="res://Resources/WorldGrid.gd" id="6_5cxjp"]
+
+[sub_resource type="TileSet" id="TileSet_ae0qb"]
+physics_layer_0/collision_layer = 1
+
+[node name="Node2D" type="Node2D"]
+
+[node name="CanvasLayer" type="CanvasLayer" parent="."]
+
+[node name="Building" type="TextureButton" parent="CanvasLayer"]
+button_mask = 3
+script = ExtResource("3_eltko")
+
+[node name="Tutorial" type="Control" parent="CanvasLayer"]
+visible = false
+layout_mode = 3
+anchors_preset = 0
+offset_left = 744.0
+offset_top = 32.0
+offset_right = 1890.0
+offset_bottom = 391.0
+size_flags_horizontal = 0
+size_flags_vertical = 8
+script = ExtResource("2_g6b55")
+
+[node name="Background" type="ColorRect" parent="CanvasLayer/Tutorial"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.462291, 0.462291, 0.462291, 1)
+
+[node name="Title" type="Label" parent="CanvasLayer/Tutorial"]
+layout_mode = 1
+offset_left = 36.0
+offset_top = 6.0
+offset_right = 360.0
+offset_bottom = 126.0
+theme_override_font_sizes/font_size = 66
+text = "Tutorial"
+
+[node name="Description" type="Label" parent="CanvasLayer/Tutorial"]
+layout_mode = 0
+offset_left = 18.0
+offset_top = 114.0
+offset_right = 1569.0
+offset_bottom = 333.0
+theme_override_font_sizes/font_size = 31
+text = "You've just arrived, in this game you will play... God ! 
+You will have to automate the creation of particles (starting from strings
+and then continue creating the universe, life and much more !
+Your first machine is a string creator, it creates strings from nothing...
+Or maybe virtual particles, but no one knows how it works"
+
+[node name="Continue" type="Button" parent="CanvasLayer/Tutorial"]
+show_behind_parent = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Control" type="Control" parent="CanvasLayer"]
+layout_mode = 3
+anchors_preset = 0
+offset_left = 464.0
+offset_top = 920.0
+offset_right = 1556.0
+offset_bottom = 1082.0
+
+[node name="Panel" type="Panel" parent="CanvasLayer/Control"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="CanvasLayer/Control"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+alignment = 1
+script = ExtResource("3_ixlx2")
+
+[node name="World" type="Node2D" parent="CanvasLayer"]
+position = Vector2(672, 608)
+scale = Vector2(2, 2)
+script = ExtResource("4_bwkcf")
+
+[node name="MainMathBase" type="Sprite2D" parent="CanvasLayer/World"]
+position = Vector2(-108, -152)
+scale = Vector2(2, 2)
+texture = ExtResource("4_ijwug")
+
+[node name="Label" type="Label" parent="CanvasLayer/World/MainMathBase"]
+anchors_preset = -1
+anchor_right = -3.75
+offset_left = -12.0
+offset_top = -4.0
+offset_right = 316.0
+offset_bottom = 73.0
+scale = Vector2(0.25, 0.25)
+size_flags_horizontal = 0
+size_flags_vertical = 0
+theme_override_colors/font_color = Color(0.443137, 0.356863, 0.643137, 1)
+theme_override_font_sizes/font_size = 56
+text = "0"
+horizontal_alignment = 1
+metadata/_edit_use_anchors_ = true
+
+[node name="WorldGrid" type="TileMap" parent="."]
+tile_set = SubResource("TileSet_ae0qb")
+format = 2
+script = ExtResource("6_5cxjp")
+
+[connection signal="pressed" from="CanvasLayer/Building" to="CanvasLayer/Building" method="_on_pressed"]
+[connection signal="pressed" from="CanvasLayer/Tutorial/Continue" to="CanvasLayer/Tutorial" method="_on_continue_pressed"]

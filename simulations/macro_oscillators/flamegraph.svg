@@ -1,0 +1,491 @@
+<?xml version="1.0" standalone="no"?><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg version="1.1" width="1200" height="438" onload="init(evt)" viewBox="0 0 1200 438" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:fg="http://github.com/jonhoo/inferno"><!--Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples.--><!--NOTES: --><defs><linearGradient id="background" y1="0" y2="1" x1="0" x2="0"><stop stop-color="#eeeeee" offset="5%"/><stop stop-color="#eeeeb0" offset="95%"/></linearGradient></defs><style type="text/css">
+text { font-family:monospace; font-size:12px }
+#title { text-anchor:middle; font-size:17px; }
+#matched { text-anchor:end; }
+#search { text-anchor:end; opacity:0.1; cursor:pointer; }
+#search:hover, #search.show { opacity:1; }
+#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+#unzoom { cursor:pointer; }
+#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+.hide { display:none; }
+.parent { opacity:0.5; }
+</style><script type="text/ecmascript"><![CDATA[
+        var nametype = 'Function:';
+        var fontsize = 12;
+        var fontwidth = 0.59;
+        var xpad = 10;
+        var inverted = false;
+        var searchcolor = 'rgb(230,0,230)';
+        var fluiddrawing = true;
+        var truncate_text_right = false;
+    ]]><![CDATA["use strict";
+var details, searchbtn, unzoombtn, matchedtxt, svg, searching, frames, known_font_width;
+function init(evt) {
+    details = document.getElementById("details").firstChild;
+    searchbtn = document.getElementById("search");
+    unzoombtn = document.getElementById("unzoom");
+    matchedtxt = document.getElementById("matched");
+    svg = document.getElementsByTagName("svg")[0];
+    frames = document.getElementById("frames");
+    known_font_width = get_monospace_width(frames);
+    total_samples = parseInt(frames.attributes.total_samples.value);
+    searching = 0;
+
+    // Use GET parameters to restore a flamegraph's state.
+    var restore_state = function() {
+        var params = get_params();
+        if (params.x && params.y)
+            zoom(find_group(document.querySelector('[*|x="' + params.x + '"][y="' + params.y + '"]')));
+        if (params.s)
+            search(params.s);
+    };
+
+    if (fluiddrawing) {
+        // Make width dynamic so the SVG fits its parent's width.
+        svg.removeAttribute("width");
+        // Edge requires us to have a viewBox that gets updated with size changes.
+        var isEdge = /Edge\/\d./i.test(navigator.userAgent);
+        if (!isEdge) {
+            svg.removeAttribute("viewBox");
+        }
+        var update_for_width_change = function() {
+            if (isEdge) {
+                svg.attributes.viewBox.value = "0 0 " + svg.width.baseVal.value + " " + svg.height.baseVal.value;
+            }
+
+            // Keep consistent padding on left and right of frames container.
+            frames.attributes.width.value = svg.width.baseVal.value - xpad * 2;
+
+            // Text truncation needs to be adjusted for the current width.
+            update_text_for_elements(frames.children);
+
+            // Keep search elements at a fixed distance from right edge.
+            var svgWidth = svg.width.baseVal.value;
+            searchbtn.attributes.x.value = svgWidth - xpad;
+            matchedtxt.attributes.x.value = svgWidth - xpad;
+        };
+        window.addEventListener('resize', function() {
+            update_for_width_change();
+        });
+        // This needs to be done asynchronously for Safari to work.
+        setTimeout(function() {
+            unzoom();
+            update_for_width_change();
+            restore_state();
+        }, 0);
+    } else {
+        restore_state();
+    }
+}
+// event listeners
+window.addEventListener("click", function(e) {
+    var target = find_group(e.target);
+    if (target) {
+        if (target.nodeName == "a") {
+            if (e.ctrlKey === false) return;
+            e.preventDefault();
+        }
+        if (target.classList.contains("parent")) unzoom();
+        zoom(target);
+
+        // set parameters for zoom state
+        var el = target.querySelector("rect");
+        if (el && el.attributes && el.attributes.y && el.attributes["fg:x"]) {
+            var params = get_params()
+            params.x = el.attributes["fg:x"].value;
+            params.y = el.attributes.y.value;
+            history.replaceState(null, null, parse_params(params));
+        }
+    }
+    else if (e.target.id == "unzoom") {
+        unzoom();
+
+        // remove zoom state
+        var params = get_params();
+        if (params.x) delete params.x;
+        if (params.y) delete params.y;
+        history.replaceState(null, null, parse_params(params));
+    }
+    else if (e.target.id == "search") search_prompt();
+}, false)
+// mouse-over for info
+// show
+window.addEventListener("mouseover", function(e) {
+    var target = find_group(e.target);
+    if (target) details.nodeValue = nametype + " " + g_to_text(target);
+}, false)
+// clear
+window.addEventListener("mouseout", function(e) {
+    var target = find_group(e.target);
+    if (target) details.nodeValue = ' ';
+}, false)
+// ctrl-F for search
+window.addEventListener("keydown",function (e) {
+    if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+        e.preventDefault();
+        search_prompt();
+    }
+}, false)
+// functions
+function get_params() {
+    var params = {};
+    var paramsarr = window.location.search.substr(1).split('&');
+    for (var i = 0; i < paramsarr.length; ++i) {
+        var tmp = paramsarr[i].split("=");
+        if (!tmp[0] || !tmp[1]) continue;
+        params[tmp[0]]  = decodeURIComponent(tmp[1]);
+    }
+    return params;
+}
+function parse_params(params) {
+    var uri = "?";
+    for (var key in params) {
+        uri += key + '=' + encodeURIComponent(params[key]) + '&';
+    }
+    if (uri.slice(-1) == "&")
+        uri = uri.substring(0, uri.length - 1);
+    if (uri == '?')
+        uri = window.location.href.split('?')[0];
+    return uri;
+}
+function find_child(node, selector) {
+    var children = node.querySelectorAll(selector);
+    if (children.length) return children[0];
+    return;
+}
+function find_group(node) {
+    var parent = node.parentElement;
+    if (!parent) return;
+    if (parent.id == "frames") return node;
+    return find_group(parent);
+}
+function orig_save(e, attr, val) {
+    if (e.attributes["fg:orig_" + attr] != undefined) return;
+    if (e.attributes[attr] == undefined) return;
+    if (val == undefined) val = e.attributes[attr].value;
+    e.setAttribute("fg:orig_" + attr, val);
+}
+function orig_load(e, attr) {
+    if (e.attributes["fg:orig_"+attr] == undefined) return;
+    e.attributes[attr].value = e.attributes["fg:orig_" + attr].value;
+    e.removeAttribute("fg:orig_" + attr);
+}
+function g_to_text(e) {
+    var text = find_child(e, "title").firstChild.nodeValue;
+    return (text)
+}
+function g_to_func(e) {
+    var func = g_to_text(e);
+    // if there's any manipulation we want to do to the function
+    // name before it's searched, do it here before returning.
+    return (func);
+}
+function get_monospace_width(frames) {
+    // Given the id="frames" element, return the width of text characters if
+    // this is a monospace font, otherwise return 0.
+    text = find_child(frames.children[0], "text");
+    originalContent = text.textContent;
+    text.textContent = "!";
+    bangWidth = text.getComputedTextLength();
+    text.textContent = "W";
+    wWidth = text.getComputedTextLength();
+    text.textContent = originalContent;
+    if (bangWidth === wWidth) {
+        return bangWidth;
+    } else {
+        return 0;
+    }
+}
+function update_text_for_elements(elements) {
+    // In order to render quickly in the browser, you want to do one pass of
+    // reading attributes, and one pass of mutating attributes. See
+    // https://web.dev/avoid-large-complex-layouts-and-layout-thrashing/ for details.
+
+    // Fall back to inefficient calculation, if we're variable-width font.
+    // TODO This should be optimized somehow too.
+    if (known_font_width === 0) {
+        for (var i = 0; i < elements.length; i++) {
+            update_text(elements[i]);
+        }
+        return;
+    }
+
+    var textElemNewAttributes = [];
+    for (var i = 0; i < elements.length; i++) {
+        var e = elements[i];
+        var r = find_child(e, "rect");
+        var t = find_child(e, "text");
+        var w = parseFloat(r.attributes.width.value) * frames.attributes.width.value / 100 - 3;
+        var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+        var newX = format_percent((parseFloat(r.attributes.x.value) + (100 * 3 / frames.attributes.width.value)));
+
+        // Smaller than this size won't fit anything
+        if (w < 2 * known_font_width) {
+            textElemNewAttributes.push([newX, ""]);
+            continue;
+        }
+
+        // Fit in full text width
+        if (txt.length * known_font_width < w) {
+            textElemNewAttributes.push([newX, txt]);
+            continue;
+        }
+
+        var substringLength = Math.floor(w / known_font_width) - 2;
+        if (truncate_text_right) {
+            // Truncate the right side of the text.
+            textElemNewAttributes.push([newX, txt.substring(0, substringLength) + ".."]);
+            continue;
+        } else {
+            // Truncate the left side of the text.
+            textElemNewAttributes.push([newX, ".." + txt.substring(txt.length - substringLength, txt.length)]);
+            continue;
+        }
+    }
+
+    console.assert(textElemNewAttributes.length === elements.length, "Resize failed, please file a bug at https://github.com/jonhoo/inferno/");
+
+    // Now that we know new textContent, set it all in one go so we don't refresh a bazillion times.
+    for (var i = 0; i < elements.length; i++) {
+        var e = elements[i];
+        var values = textElemNewAttributes[i];
+        var t = find_child(e, "text");
+        t.attributes.x.value = values[0];
+        t.textContent = values[1];
+    }
+}
+
+function update_text(e) {
+    var r = find_child(e, "rect");
+    var t = find_child(e, "text");
+    var w = parseFloat(r.attributes.width.value) * frames.attributes.width.value / 100 - 3;
+    var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+    t.attributes.x.value = format_percent((parseFloat(r.attributes.x.value) + (100 * 3 / frames.attributes.width.value)));
+
+    // Smaller than this size won't fit anything
+    if (w < 2 * fontsize * fontwidth) {
+        t.textContent = "";
+        return;
+    }
+    t.textContent = txt;
+    // Fit in full text width
+    if (t.getComputedTextLength() < w)
+        return;
+    if (truncate_text_right) {
+        // Truncate the right side of the text.
+        for (var x = txt.length - 2; x > 0; x--) {
+            if (t.getSubStringLength(0, x + 2) <= w) {
+                t.textContent = txt.substring(0, x) + "..";
+                return;
+            }
+        }
+    } else {
+        // Truncate the left side of the text.
+        for (var x = 2; x < txt.length; x++) {
+            if (t.getSubStringLength(x - 2, txt.length) <= w) {
+                t.textContent = ".." + txt.substring(x, txt.length);
+                return;
+            }
+        }
+    }
+    t.textContent = "";
+}
+// zoom
+function zoom_reset(e) {
+    if (e.tagName == "rect") {
+        e.attributes.x.value = format_percent(100 * parseInt(e.attributes["fg:x"].value) / total_samples);
+        e.attributes.width.value = format_percent(100 * parseInt(e.attributes["fg:w"].value) / total_samples);
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_reset(c[i]);
+    }
+}
+function zoom_child(e, x, zoomed_width_samples) {
+    if (e.tagName == "text") {
+        var parent_x = parseFloat(find_child(e.parentNode, "rect[x]").attributes.x.value);
+        e.attributes.x.value = format_percent(parent_x + (100 * 3 / frames.attributes.width.value));
+    } else if (e.tagName == "rect") {
+        e.attributes.x.value = format_percent(100 * (parseInt(e.attributes["fg:x"].value) - x) / zoomed_width_samples);
+        e.attributes.width.value = format_percent(100 * parseInt(e.attributes["fg:w"].value) / zoomed_width_samples);
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_child(c[i], x, zoomed_width_samples);
+    }
+}
+function zoom_parent(e) {
+    if (e.attributes) {
+        if (e.attributes.x != undefined) {
+            e.attributes.x.value = "0.0%";
+        }
+        if (e.attributes.width != undefined) {
+            e.attributes.width.value = "100.0%";
+        }
+    }
+    if (e.childNodes == undefined) return;
+    for(var i = 0, c = e.childNodes; i < c.length; i++) {
+        zoom_parent(c[i]);
+    }
+}
+function zoom(node) {
+    var attr = find_child(node, "rect").attributes;
+    var width = parseInt(attr["fg:w"].value);
+    var xmin = parseInt(attr["fg:x"].value);
+    var xmax = xmin + width;
+    var ymin = parseFloat(attr.y.value);
+    unzoombtn.classList.remove("hide");
+    var el = frames.children;
+    var to_update_text = [];
+    for (var i = 0; i < el.length; i++) {
+        var e = el[i];
+        var a = find_child(e, "rect").attributes;
+        var ex = parseInt(a["fg:x"].value);
+        var ew = parseInt(a["fg:w"].value);
+        // Is it an ancestor
+        if (!inverted) {
+            var upstack = parseFloat(a.y.value) > ymin;
+        } else {
+            var upstack = parseFloat(a.y.value) < ymin;
+        }
+        if (upstack) {
+            // Direct ancestor
+            if (ex <= xmin && (ex+ew) >= xmax) {
+                e.classList.add("parent");
+                zoom_parent(e);
+                to_update_text.push(e);
+            }
+            // not in current path
+            else
+                e.classList.add("hide");
+        }
+        // Children maybe
+        else {
+            // no common path
+            if (ex < xmin || ex >= xmax) {
+                e.classList.add("hide");
+            }
+            else {
+                zoom_child(e, xmin, width);
+                to_update_text.push(e);
+            }
+        }
+    }
+    update_text_for_elements(to_update_text);
+}
+function unzoom() {
+    unzoombtn.classList.add("hide");
+    var el = frames.children;
+    for(var i = 0; i < el.length; i++) {
+        el[i].classList.remove("parent");
+        el[i].classList.remove("hide");
+        zoom_reset(el[i]);
+    }
+    update_text_for_elements(el);
+}
+// search
+function reset_search() {
+    var el = document.querySelectorAll("#frames rect");
+    for (var i = 0; i < el.length; i++) {
+        orig_load(el[i], "fill")
+    }
+    var params = get_params();
+    delete params.s;
+    history.replaceState(null, null, parse_params(params));
+}
+function search_prompt() {
+    if (!searching) {
+        var term = prompt("Enter a search term (regexp " +
+            "allowed, eg: ^ext4_)", "");
+        if (term != null) {
+            search(term)
+        }
+    } else {
+        reset_search();
+        searching = 0;
+        searchbtn.classList.remove("show");
+        searchbtn.firstChild.nodeValue = "Search"
+        matchedtxt.classList.add("hide");
+        matchedtxt.firstChild.nodeValue = ""
+    }
+}
+function search(term) {
+    var re = new RegExp(term);
+    var el = frames.children;
+    var matches = new Object();
+    var maxwidth = 0;
+    for (var i = 0; i < el.length; i++) {
+        var e = el[i];
+        // Skip over frames which are either not visible, or below the zoomed-to frame
+        if (e.classList.contains("hide") || e.classList.contains("parent")) {
+            continue;
+        }
+        var func = g_to_func(e);
+        var rect = find_child(e, "rect");
+        if (func == null || rect == null)
+            continue;
+        // Save max width. Only works as we have a root frame
+        var w = parseInt(rect.attributes["fg:w"].value);
+        if (w > maxwidth)
+            maxwidth = w;
+        if (func.match(re)) {
+            // highlight
+            var x = parseInt(rect.attributes["fg:x"].value);
+            orig_save(rect, "fill");
+            rect.attributes.fill.value = searchcolor;
+            // remember matches
+            if (matches[x] == undefined) {
+                matches[x] = w;
+            } else {
+                if (w > matches[x]) {
+                    // overwrite with parent
+                    matches[x] = w;
+                }
+            }
+            searching = 1;
+        }
+    }
+    if (!searching)
+        return;
+    var params = get_params();
+    params.s = term;
+    history.replaceState(null, null, parse_params(params));
+
+    searchbtn.classList.add("show");
+    searchbtn.firstChild.nodeValue = "Reset Search";
+    // calculate percent matched, excluding vertical overlap
+    var count = 0;
+    var lastx = -1;
+    var lastw = 0;
+    var keys = Array();
+    for (k in matches) {
+        if (matches.hasOwnProperty(k))
+            keys.push(k);
+    }
+    // sort the matched frames by their x location
+    // ascending, then width descending
+    keys.sort(function(a, b){
+        return a - b;
+    });
+    // Step through frames saving only the biggest bottom-up frames
+    // thanks to the sort order. This relies on the tree property
+    // where children are always smaller than their parents.
+    for (var k in keys) {
+        var x = parseInt(keys[k]);
+        var w = matches[keys[k]];
+        if (x >= lastx + lastw) {
+            count += w;
+            lastx = x;
+            lastw = w;
+        }
+    }
+    // display matched percent
+    matchedtxt.classList.remove("hide");
+    var pct = 100 * count / maxwidth;
+    if (pct != 100) pct = pct.toFixed(1);
+    matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+}
+function format_percent(n) {
+    return n.toFixed(4) + "%";
+}
+]]></script><rect x="0" y="0" width="100%" height="438" fill="url(#background)"/><text id="title" fill="rgb(0,0,0)" x="50.0000%" y="24.00">Flame Graph</text><text id="details" fill="rgb(0,0,0)" x="10" y="421.00"> </text><text id="unzoom" class="hide" fill="rgb(0,0,0)" x="10" y="24.00">Reset Zoom</text><text id="search" fill="rgb(0,0,0)" x="1190" y="24.00">Search</text><text id="matched" fill="rgb(0,0,0)" x="1190" y="421.00"> </text><svg id="frames" x="10" width="1180" total_samples="23841803894"><g><title>&lt;macro_oscillators::grid::GridSimulation as macro_oscillators::Simulation&gt;::draw (2,758,988 samples, 0.01%)</title><rect x="0.0000%" y="357" width="0.0116%" height="15" fill="rgb(227,0,7)" fg:x="0" fg:w="2758988"/><text x="0.2500%" y="367.50"></text></g><g><title>macroquad::texture::Texture2D::update (2,758,988 samples, 0.01%)</title><rect x="0.0000%" y="341" width="0.0116%" height="15" fill="rgb(217,0,24)" fg:x="0" fg:w="2758988"/><text x="0.2500%" y="351.50"></text></g><g><title>macroquad::texture::Texture2D::raw_miniquad_id (2,758,988 samples, 0.01%)</title><rect x="0.0000%" y="325" width="0.0116%" height="15" fill="rgb(221,193,54)" fg:x="0" fg:w="2758988"/><text x="0.2500%" y="335.50"></text></g><g><title>macroquad::Context::raw_miniquad_id (2,758,988 samples, 0.01%)</title><rect x="0.0000%" y="309" width="0.0116%" height="15" fill="rgb(248,212,6)" fg:x="0" fg:w="2758988"/><text x="0.2500%" y="319.50"></text></g><g><title>macroquad::texture::TexturesContext::texture (2,758,988 samples, 0.01%)</title><rect x="0.0000%" y="293" width="0.0116%" height="15" fill="rgb(208,68,35)" fg:x="0" fg:w="2758988"/><text x="0.2500%" y="303.50"></text></g><g><title>macroquad::texture::slotmap::TextureIdSlotMap::get (2,758,988 samples, 0.01%)</title><rect x="0.0000%" y="277" width="0.0116%" height="15" fill="rgb(232,128,0)" fg:x="0" fg:w="2758988"/><text x="0.2500%" y="287.50"></text></g><g><title>core::option::Option&lt;T&gt;::filter (2,758,988 samples, 0.01%)</title><rect x="0.0000%" y="261" width="0.0116%" height="15" fill="rgb(207,160,47)" fg:x="0" fg:w="2758988"/><text x="0.2500%" y="271.50"></text></g><g><title>macroquad::texture::slotmap::TextureIdSlotMap::get::{{closure}} (2,758,988 samples, 0.01%)</title><rect x="0.0000%" y="245" width="0.0116%" height="15" fill="rgb(228,23,34)" fg:x="0" fg:w="2758988"/><text x="0.2500%" y="255.50"></text></g><g><title>&lt;alloc::vec::Vec&lt;T,A&gt; as core::ops::deref::Deref&gt;::deref (2,201,346,464 samples, 9.23%)</title><rect x="62.1625%" y="325" width="9.2331%" height="15" fill="rgb(218,30,26)" fg:x="14820672123" fg:w="2201346464"/><text x="62.4125%" y="335.50">&lt;alloc::vec::..</text></g><g><title>alloc::vec::Vec&lt;T,A&gt;::as_slice (2,201,346,464 samples, 9.23%)</title><rect x="62.1625%" y="309" width="9.2331%" height="15" fill="rgb(220,122,19)" fg:x="14820672123" fg:w="2201346464"/><text x="62.4125%" y="319.50">alloc::vec::V..</text></g><g><title>alloc::vec::Vec&lt;T,A&gt;::as_ptr (602,677,507 samples, 2.53%)</title><rect x="68.8679%" y="293" width="2.5278%" height="15" fill="rgb(250,228,42)" fg:x="16419341080" fg:w="602677507"/><text x="69.1179%" y="303.50">al..</text></g><g><title>alloc::raw_vec::RawVec&lt;T,A&gt;::ptr (602,677,507 samples, 2.53%)</title><rect x="68.8679%" y="277" width="2.5278%" height="15" fill="rgb(240,193,28)" fg:x="16419341080" fg:w="602677507"/><text x="69.1179%" y="287.50">al..</text></g><g><title>alloc::raw_vec::RawVecInner&lt;A&gt;::ptr (602,677,507 samples, 2.53%)</title><rect x="68.8679%" y="261" width="2.5278%" height="15" fill="rgb(216,20,37)" fg:x="16419341080" fg:w="602677507"/><text x="69.1179%" y="271.50">al..</text></g><g><title>alloc::raw_vec::RawVecInner&lt;A&gt;::non_null (602,677,507 samples, 2.53%)</title><rect x="68.8679%" y="245" width="2.5278%" height="15" fill="rgb(206,188,39)" fg:x="16419341080" fg:w="602677507"/><text x="69.1179%" y="255.50">al..</text></g><g><title>&lt;alloc::vec::Vec&lt;T,A&gt; as core::ops::index::Index&lt;I&gt;&gt;::index (3,105,433,819 samples, 13.03%)</title><rect x="62.1625%" y="341" width="13.0252%" height="15" fill="rgb(217,207,13)" fg:x="14820672123" fg:w="3105433819"/><text x="62.4125%" y="351.50">&lt;alloc::vec::Vec&lt;T,A..</text></g><g><title>core::slice::index::&lt;impl core::ops::index::Index&lt;I&gt; for [T]&gt;::index (904,087,355 samples, 3.79%)</title><rect x="71.3957%" y="325" width="3.7920%" height="15" fill="rgb(231,73,38)" fg:x="17022018587" fg:w="904087355"/><text x="71.6457%" y="335.50">core..</text></g><g><title>&lt;usize as core::slice::index::SliceIndex&lt;[T]&gt;&gt;::index (904,087,355 samples, 3.79%)</title><rect x="71.3957%" y="309" width="3.7920%" height="15" fill="rgb(225,20,46)" fg:x="17022018587" fg:w="904087355"/><text x="71.6457%" y="319.50">&lt;usi..</text></g><g><title>&lt;core::iter::adapters::enumerate::Enumerate&lt;I&gt; as core::iter::traits::iterator::Iterator&gt;::next (5,535,569 samples, 0.02%)</title><rect x="75.1877%" y="341" width="0.0232%" height="15" fill="rgb(210,31,41)" fg:x="17926105942" fg:w="5535569"/><text x="75.4377%" y="351.50"></text></g><g><title>&lt;core::slice::iter::Iter&lt;T&gt; as core::iter::traits::iterator::Iterator&gt;::next (5,535,569 samples, 0.02%)</title><rect x="75.1877%" y="325" width="0.0232%" height="15" fill="rgb(221,200,47)" fg:x="17926105942" fg:w="5535569"/><text x="75.4377%" y="335.50"></text></g><g><title>&lt;core::ptr::non_null::NonNull&lt;T&gt; as core::cmp::PartialEq&gt;::eq (5,535,569 samples, 0.02%)</title><rect x="75.1877%" y="309" width="0.0232%" height="15" fill="rgb(226,26,5)" fg:x="17926105942" fg:w="5535569"/><text x="75.4377%" y="319.50"></text></g><g><title>core::f32::&lt;impl f32&gt;::abs (24,719,956 samples, 0.10%)</title><rect x="75.2109%" y="341" width="0.1037%" height="15" fill="rgb(249,33,26)" fg:x="17931641511" fg:w="24719956"/><text x="75.4609%" y="351.50"></text></g><g><title>core::f32::&lt;impl f32&gt;::is_infinite (353,299,475 samples, 1.48%)</title><rect x="75.3146%" y="341" width="1.4818%" height="15" fill="rgb(235,183,28)" fg:x="17956361467" fg:w="353299475"/><text x="75.5646%" y="351.50"></text></g><g><title>core::iter::range::&lt;impl core::iter::traits::iterator::Iterator for core::ops::range::RangeInclusive&lt;A&gt;&gt;::next (7,597,584 samples, 0.03%)</title><rect x="76.7965%" y="341" width="0.0319%" height="15" fill="rgb(221,5,38)" fg:x="18309660942" fg:w="7597584"/><text x="77.0465%" y="351.50"></text></g><g><title>&lt;core::ops::range::RangeInclusive&lt;T&gt; as core::iter::range::RangeInclusiveIteratorImpl&gt;::spec_next (7,597,584 samples, 0.03%)</title><rect x="76.7965%" y="325" width="0.0319%" height="15" fill="rgb(247,18,42)" fg:x="18309660942" fg:w="7597584"/><text x="77.0465%" y="335.50"></text></g><g><title>core::ops::range::RangeInclusive&lt;Idx&gt;::is_empty (7,597,584 samples, 0.03%)</title><rect x="76.7965%" y="309" width="0.0319%" height="15" fill="rgb(241,131,45)" fg:x="18309660942" fg:w="7597584"/><text x="77.0465%" y="319.50"></text></g><g><title>macro_oscillators::grid::GridSimulation::get_block_h (3,777,957,323 samples, 15.85%)</title><rect x="76.8283%" y="341" width="15.8459%" height="15" fill="rgb(249,31,29)" fg:x="18317258526" fg:w="3777957323"/><text x="77.0783%" y="351.50">macro_oscillators::grid:..</text></g><g><title>&lt;alloc::vec::Vec&lt;T,A&gt; as core::ops::index::Index&lt;I&gt;&gt;::index (1,201,101,235 samples, 5.04%)</title><rect x="87.6365%" y="325" width="5.0378%" height="15" fill="rgb(225,111,53)" fg:x="20894114614" fg:w="1201101235"/><text x="87.8865%" y="335.50">&lt;alloc..</text></g><g><title>core::slice::index::&lt;impl core::ops::index::Index&lt;I&gt; for [T]&gt;::index (1,201,101,235 samples, 5.04%)</title><rect x="87.6365%" y="309" width="5.0378%" height="15" fill="rgb(238,160,17)" fg:x="20894114614" fg:w="1201101235"/><text x="87.8865%" y="319.50">core::..</text></g><g><title>&lt;usize as core::slice::index::SliceIndex&lt;[T]&gt;&gt;::index (1,201,101,235 samples, 5.04%)</title><rect x="87.6365%" y="293" width="5.0378%" height="15" fill="rgb(214,148,48)" fg:x="20894114614" fg:w="1201101235"/><text x="87.8865%" y="303.50">&lt;usize..</text></g><g><title>std::f32::&lt;impl f32&gt;::cos (28,720,412 samples, 0.12%)</title><rect x="92.6743%" y="341" width="0.1205%" height="15" fill="rgb(232,36,49)" fg:x="22095215849" fg:w="28720412"/><text x="92.9243%" y="351.50"></text></g><g><title>cosf32 (28,720,412 samples, 0.12%)</title><rect x="92.6743%" y="325" width="0.1205%" height="15" fill="rgb(209,103,24)" fg:x="22095215849" fg:w="28720412"/><text x="92.9243%" y="335.50"></text></g><g><title>&lt;macro_oscillators::grid::GridSimulation as macro_oscillators::Simulation&gt;::update (22,156,981,165 samples, 92.93%)</title><rect x="0.0116%" y="357" width="92.9333%" height="15" fill="rgb(229,88,8)" fg:x="2758988" fg:w="22156981165"/><text x="0.2616%" y="367.50">&lt;macro_oscillators::grid::GridSimulation as macro_oscillators::Simulation&gt;::update</text></g><g><title>std::f32::&lt;impl f32&gt;::exp (35,803,892 samples, 0.15%)</title><rect x="92.7947%" y="341" width="0.1502%" height="15" fill="rgb(213,181,19)" fg:x="22123936261" fg:w="35803892"/><text x="93.0447%" y="351.50"></text></g><g><title>expf (35,803,892 samples, 0.15%)</title><rect x="92.7947%" y="325" width="0.1502%" height="15" fill="rgb(254,191,54)" fg:x="22123936261" fg:w="35803892"/><text x="93.0447%" y="335.50"></text></g><g><title>&lt;macroquad::Stage as miniquad::event::EventHandler&gt;::draw (5,495,351 samples, 0.02%)</title><rect x="92.9449%" y="357" width="0.0230%" height="15" fill="rgb(241,83,37)" fg:x="22159740153" fg:w="5495351"/><text x="93.1949%" y="367.50"></text></g><g><title>macroquad::Context::begin_frame (5,495,351 samples, 0.02%)</title><rect x="92.9449%" y="341" width="0.0230%" height="15" fill="rgb(233,36,39)" fg:x="22159740153" fg:w="5495351"/><text x="93.1949%" y="351.50"></text></g><g><title>macroquad::ui::ui_context::UiContext::process_input (2,768,470 samples, 0.01%)</title><rect x="92.9563%" y="325" width="0.0116%" height="15" fill="rgb(226,3,54)" fg:x="22162467034" fg:w="2768470"/><text x="93.2063%" y="335.50"></text></g><g><title>&lt;macroquad::camera::Camera2D as macroquad::camera::Camera&gt;::matrix (2,773,194 samples, 0.01%)</title><rect x="92.9679%" y="357" width="0.0116%" height="15" fill="rgb(245,192,40)" fg:x="22165235504" fg:w="2773194"/><text x="93.2179%" y="367.50"></text></g><g><title>glam::f32::scalar::mat4::Mat4::from_axis_angle (2,773,194 samples, 0.01%)</title><rect x="92.9679%" y="341" width="0.0116%" height="15" fill="rgb(238,167,29)" fg:x="22165235504" fg:w="2773194"/><text x="93.2179%" y="351.50"></text></g><g><title>glam::f32::math::std_math::sin_cos (2,773,194 samples, 0.01%)</title><rect x="92.9679%" y="325" width="0.0116%" height="15" fill="rgb(232,182,51)" fg:x="22165235504" fg:w="2773194"/><text x="93.2179%" y="335.50"></text></g><g><title>std::f32::&lt;impl f32&gt;::sin_cos (2,773,194 samples, 0.01%)</title><rect x="92.9679%" y="309" width="0.0116%" height="15" fill="rgb(231,60,39)" fg:x="22165235504" fg:w="2773194"/><text x="93.2179%" y="319.50"></text></g><g><title>std::f32::&lt;impl f32&gt;::sin (2,773,194 samples, 0.01%)</title><rect x="92.9679%" y="293" width="0.0116%" height="15" fill="rgb(208,69,12)" fg:x="22165235504" fg:w="2773194"/><text x="93.2179%" y="303.50"></text></g><g><title>&lt;miniquad::graphics::gl::GlContext as miniquad::graphics::RenderingBackend&gt;::end_render_pass (13,603,222 samples, 0.06%)</title><rect x="92.9796%" y="357" width="0.0571%" height="15" fill="rgb(235,93,37)" fg:x="22168008698" fg:w="13603222"/><text x="93.2296%" y="367.50"></text></g><g><title>miniquad::native::gl::glBindFramebuffer (13,603,222 samples, 0.06%)</title><rect x="92.9796%" y="341" width="0.0571%" height="15" fill="rgb(213,116,39)" fg:x="22168008698" fg:w="13603222"/><text x="93.2296%" y="351.50"></text></g><g><title>&lt;macro_oscillators::grid::GridSimulation as macro_oscillators::Simulation&gt;::update (13,603,222 samples, 0.06%)</title><rect x="92.9796%" y="325" width="0.0571%" height="15" fill="rgb(222,207,29)" fg:x="22168008698" fg:w="13603222"/><text x="93.2296%" y="335.50"></text></g><g><title>&lt;miniquad::graphics::gl::GlContext as miniquad::graphics::RenderingBackend&gt;::new_texture (5,699,690 samples, 0.02%)</title><rect x="93.0429%" y="357" width="0.0239%" height="15" fill="rgb(206,96,30)" fg:x="22183108727" fg:w="5699690"/><text x="93.2929%" y="367.50"></text></g><g><title>miniquad::graphics::gl::Texture::new (5,699,690 samples, 0.02%)</title><rect x="93.0429%" y="341" width="0.0239%" height="15" fill="rgb(218,138,4)" fg:x="22183108727" fg:w="5699690"/><text x="93.2929%" y="351.50"></text></g><g><title>miniquad::native::gl::glTexImage2D (5,699,690 samples, 0.02%)</title><rect x="93.0429%" y="325" width="0.0239%" height="15" fill="rgb(250,191,14)" fg:x="22183108727" fg:w="5699690"/><text x="93.2929%" y="335.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (5,699,690 samples, 0.02%)</title><rect x="93.0429%" y="309" width="0.0239%" height="15" fill="rgb(239,60,40)" fg:x="22183108727" fg:w="5699690"/><text x="93.2929%" y="319.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (5,699,690 samples, 0.02%)</title><rect x="93.0429%" y="293" width="0.0239%" height="15" fill="rgb(206,27,48)" fg:x="22183108727" fg:w="5699690"/><text x="93.2929%" y="303.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (5,699,690 samples, 0.02%)</title><rect x="93.0429%" y="277" width="0.0239%" height="15" fill="rgb(225,35,8)" fg:x="22183108727" fg:w="5699690"/><text x="93.2929%" y="287.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (5,699,690 samples, 0.02%)</title><rect x="93.0429%" y="261" width="0.0239%" height="15" fill="rgb(250,213,24)" fg:x="22183108727" fg:w="5699690"/><text x="93.2929%" y="271.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (5,699,690 samples, 0.02%)</title><rect x="93.0429%" y="245" width="0.0239%" height="15" fill="rgb(247,123,22)" fg:x="22183108727" fg:w="5699690"/><text x="93.2929%" y="255.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (5,699,690 samples, 0.02%)</title><rect x="93.0429%" y="229" width="0.0239%" height="15" fill="rgb(231,138,38)" fg:x="22183108727" fg:w="5699690"/><text x="93.2929%" y="239.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (5,699,690 samples, 0.02%)</title><rect x="93.0429%" y="213" width="0.0239%" height="15" fill="rgb(231,145,46)" fg:x="22183108727" fg:w="5699690"/><text x="93.2929%" y="223.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (4,256,069 samples, 0.02%)</title><rect x="93.0490%" y="197" width="0.0179%" height="15" fill="rgb(251,118,11)" fg:x="22184552348" fg:w="4256069"/><text x="93.2990%" y="207.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (4,256,069 samples, 0.02%)</title><rect x="93.0490%" y="181" width="0.0179%" height="15" fill="rgb(217,147,25)" fg:x="22184552348" fg:w="4256069"/><text x="93.2990%" y="191.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (4,256,069 samples, 0.02%)</title><rect x="93.0490%" y="165" width="0.0179%" height="15" fill="rgb(247,81,37)" fg:x="22184552348" fg:w="4256069"/><text x="93.2990%" y="175.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (4,256,069 samples, 0.02%)</title><rect x="93.0490%" y="149" width="0.0179%" height="15" fill="rgb(209,12,38)" fg:x="22184552348" fg:w="4256069"/><text x="93.2990%" y="159.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (4,256,069 samples, 0.02%)</title><rect x="93.0490%" y="133" width="0.0179%" height="15" fill="rgb(227,1,9)" fg:x="22184552348" fg:w="4256069"/><text x="93.2990%" y="143.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (4,256,069 samples, 0.02%)</title><rect x="93.0490%" y="117" width="0.0179%" height="15" fill="rgb(248,47,43)" fg:x="22184552348" fg:w="4256069"/><text x="93.2990%" y="127.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (4,256,069 samples, 0.02%)</title><rect x="93.0490%" y="101" width="0.0179%" height="15" fill="rgb(221,10,30)" fg:x="22184552348" fg:w="4256069"/><text x="93.2990%" y="111.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (4,256,069 samples, 0.02%)</title><rect x="93.0490%" y="85" width="0.0179%" height="15" fill="rgb(210,229,1)" fg:x="22184552348" fg:w="4256069"/><text x="93.2990%" y="95.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (4,256,069 samples, 0.02%)</title><rect x="93.0490%" y="69" width="0.0179%" height="15" fill="rgb(222,148,37)" fg:x="22184552348" fg:w="4256069"/><text x="93.2990%" y="79.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,674,891 samples, 0.01%)</title><rect x="93.0556%" y="53" width="0.0112%" height="15" fill="rgb(234,67,33)" fg:x="22186133526" fg:w="2674891"/><text x="93.3056%" y="63.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,674,891 samples, 0.01%)</title><rect x="93.0556%" y="37" width="0.0112%" height="15" fill="rgb(247,98,35)" fg:x="22186133526" fg:w="2674891"/><text x="93.3056%" y="47.50"></text></g><g><title>&lt;miniquad::graphics::gl::GlContext as miniquad::graphics::RenderingBackend&gt;::texture_update_part (5,472,366 samples, 0.02%)</title><rect x="93.0668%" y="357" width="0.0230%" height="15" fill="rgb(247,138,52)" fg:x="22188808417" fg:w="5472366"/><text x="93.3168%" y="367.50"></text></g><g><title>miniquad::graphics::gl::Texture::update_texture_part (5,472,366 samples, 0.02%)</title><rect x="93.0668%" y="341" width="0.0230%" height="15" fill="rgb(213,79,30)" fg:x="22188808417" fg:w="5472366"/><text x="93.3168%" y="351.50"></text></g><g><title>miniquad::graphics::gl::cache::GlCache::bind_texture (5,472,366 samples, 0.02%)</title><rect x="93.0668%" y="325" width="0.0230%" height="15" fill="rgb(246,177,23)" fg:x="22188808417" fg:w="5472366"/><text x="93.3168%" y="335.50"></text></g><g><title>miniquad::native::gl::glActiveTexture (5,472,366 samples, 0.02%)</title><rect x="93.0668%" y="309" width="0.0230%" height="15" fill="rgb(230,62,27)" fg:x="22188808417" fg:w="5472366"/><text x="93.3168%" y="319.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (5,472,366 samples, 0.02%)</title><rect x="93.0668%" y="293" width="0.0230%" height="15" fill="rgb(216,154,8)" fg:x="22188808417" fg:w="5472366"/><text x="93.3168%" y="303.50"></text></g><g><title>CONTEXT (2,767,717 samples, 0.01%)</title><rect x="93.0898%" y="357" width="0.0116%" height="15" fill="rgb(244,35,45)" fg:x="22194280783" fg:w="2767717"/><text x="93.3398%" y="367.50"></text></g><g><title>&lt;miniquad::graphics::gl::GlContext as miniquad::graphics::RenderingBackend&gt;::apply_bindings_from_slice (2,767,717 samples, 0.01%)</title><rect x="93.0898%" y="341" width="0.0116%" height="15" fill="rgb(251,115,12)" fg:x="22194280783" fg:w="2767717"/><text x="93.3398%" y="351.50"></text></g><g><title>[libc.so.6] (2,771,875 samples, 0.01%)</title><rect x="93.1055%" y="357" width="0.0116%" height="15" fill="rgb(240,54,50)" fg:x="22198037029" fg:w="2771875"/><text x="93.3555%" y="367.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (4,280,886 samples, 0.02%)</title><rect x="93.1246%" y="357" width="0.0180%" height="15" fill="rgb(233,84,52)" fg:x="22202579739" fg:w="4280886"/><text x="93.3746%" y="367.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,772,966 samples, 0.01%)</title><rect x="93.1309%" y="341" width="0.0116%" height="15" fill="rgb(207,117,47)" fg:x="22204087659" fg:w="2772966"/><text x="93.3809%" y="351.50"></text></g><g><title>&lt;macro_oscillators::grid::GridSimulation as macro_oscillators::Simulation&gt;::draw (5,541,964 samples, 0.02%)</title><rect x="93.2320%" y="341" width="0.0232%" height="15" fill="rgb(249,43,39)" fg:x="22228187340" fg:w="5541964"/><text x="93.4820%" y="351.50"></text></g><g><title>macroquad::text::draw_text (5,541,964 samples, 0.02%)</title><rect x="93.2320%" y="325" width="0.0232%" height="15" fill="rgb(209,38,44)" fg:x="22228187340" fg:w="5541964"/><text x="93.4820%" y="335.50"></text></g><g><title>macroquad::text::draw_text_ex (5,541,964 samples, 0.02%)</title><rect x="93.2320%" y="309" width="0.0232%" height="15" fill="rgb(236,212,23)" fg:x="22228187340" fg:w="5541964"/><text x="93.4820%" y="319.50"></text></g><g><title>std::sync::poison::mutex::Mutex&lt;T&gt;::lock (5,541,964 samples, 0.02%)</title><rect x="93.2320%" y="293" width="0.0232%" height="15" fill="rgb(242,79,21)" fg:x="22228187340" fg:w="5541964"/><text x="93.4820%" y="303.50"></text></g><g><title>std::sys::sync::mutex::futex::Mutex::lock (5,541,964 samples, 0.02%)</title><rect x="93.2320%" y="277" width="0.0232%" height="15" fill="rgb(211,96,35)" fg:x="22228187340" fg:w="5541964"/><text x="93.4820%" y="287.50"></text></g><g><title>core::sync::atomic::AtomicU32::compare_exchange (5,541,964 samples, 0.02%)</title><rect x="93.2320%" y="261" width="0.0232%" height="15" fill="rgb(253,215,40)" fg:x="22228187340" fg:w="5541964"/><text x="93.4820%" y="271.50"></text></g><g><title>core::sync::atomic::atomic_compare_exchange (5,541,964 samples, 0.02%)</title><rect x="93.2320%" y="245" width="0.0232%" height="15" fill="rgb(211,81,21)" fg:x="22228187340" fg:w="5541964"/><text x="93.4820%" y="255.50"></text></g><g><title>&lt;macro_oscillators::grid::GridSimulation as macro_oscillators::Simulation&gt;::update (791,762,541 samples, 3.32%)</title><rect x="93.2552%" y="341" width="3.3209%" height="15" fill="rgb(208,190,38)" fg:x="22233729304" fg:w="791762541"/><text x="93.5052%" y="351.50">&lt;ma..</text></g><g><title>core::iter::range::&lt;impl core::iter::traits::iterator::Iterator for core::ops::range::Range&lt;A&gt;&gt;::next (57,566,566 samples, 0.24%)</title><rect x="96.3347%" y="325" width="0.2415%" height="15" fill="rgb(235,213,38)" fg:x="22967925279" fg:w="57566566"/><text x="96.5847%" y="335.50"></text></g><g><title>&lt;core::ops::range::Range&lt;T&gt; as core::iter::range::RangeIteratorImpl&gt;::spec_next (57,566,566 samples, 0.24%)</title><rect x="96.3347%" y="309" width="0.2415%" height="15" fill="rgb(237,122,38)" fg:x="22967925279" fg:w="57566566"/><text x="96.5847%" y="319.50"></text></g><g><title>core::cmp::impls::&lt;impl core::cmp::PartialOrd for usize&gt;::lt (57,566,566 samples, 0.24%)</title><rect x="96.3347%" y="293" width="0.2415%" height="15" fill="rgb(244,218,35)" fg:x="22967925279" fg:w="57566566"/><text x="96.5847%" y="303.50"></text></g><g><title>&lt;miniquad::graphics::gl::GlContext as miniquad::graphics::RenderingBackend&gt;::apply_pipeline (2,771,746 samples, 0.01%)</title><rect x="96.5761%" y="341" width="0.0116%" height="15" fill="rgb(240,68,47)" fg:x="23025491845" fg:w="2771746"/><text x="96.8261%" y="351.50"></text></g><g><title>miniquad::native::gl::glUseProgram (2,771,746 samples, 0.01%)</title><rect x="96.5761%" y="325" width="0.0116%" height="15" fill="rgb(210,16,53)" fg:x="23025491845" fg:w="2771746"/><text x="96.8261%" y="335.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,771,746 samples, 0.01%)</title><rect x="96.5761%" y="309" width="0.0116%" height="15" fill="rgb(235,124,12)" fg:x="23025491845" fg:w="2771746"/><text x="96.8261%" y="319.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,771,746 samples, 0.01%)</title><rect x="96.5761%" y="293" width="0.0116%" height="15" fill="rgb(224,169,11)" fg:x="23025491845" fg:w="2771746"/><text x="96.8261%" y="303.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,771,746 samples, 0.01%)</title><rect x="96.5761%" y="277" width="0.0116%" height="15" fill="rgb(250,166,2)" fg:x="23025491845" fg:w="2771746"/><text x="96.8261%" y="287.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,771,746 samples, 0.01%)</title><rect x="96.5761%" y="261" width="0.0116%" height="15" fill="rgb(242,216,29)" fg:x="23025491845" fg:w="2771746"/><text x="96.8261%" y="271.50"></text></g><g><title>&lt;miniquad::graphics::gl::GlContext as miniquad::graphics::RenderingBackend&gt;::buffer_update (5,524,092 samples, 0.02%)</title><rect x="96.5878%" y="341" width="0.0232%" height="15" fill="rgb(230,116,27)" fg:x="23028263591" fg:w="5524092"/><text x="96.8378%" y="351.50"></text></g><g><title>miniquad::native::gl::glBufferSubData (5,524,092 samples, 0.02%)</title><rect x="96.5878%" y="325" width="0.0232%" height="15" fill="rgb(228,99,48)" fg:x="23028263591" fg:w="5524092"/><text x="96.8378%" y="335.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (5,524,092 samples, 0.02%)</title><rect x="96.5878%" y="309" width="0.0232%" height="15" fill="rgb(253,11,6)" fg:x="23028263591" fg:w="5524092"/><text x="96.8378%" y="319.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,765,068 samples, 0.01%)</title><rect x="96.5993%" y="293" width="0.0116%" height="15" fill="rgb(247,143,39)" fg:x="23031022615" fg:w="2765068"/><text x="96.8493%" y="303.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,765,068 samples, 0.01%)</title><rect x="96.5993%" y="277" width="0.0116%" height="15" fill="rgb(236,97,10)" fg:x="23031022615" fg:w="2765068"/><text x="96.8493%" y="287.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,765,068 samples, 0.01%)</title><rect x="96.5993%" y="261" width="0.0116%" height="15" fill="rgb(233,208,19)" fg:x="23031022615" fg:w="2765068"/><text x="96.8493%" y="271.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,765,068 samples, 0.01%)</title><rect x="96.5993%" y="245" width="0.0116%" height="15" fill="rgb(216,164,2)" fg:x="23031022615" fg:w="2765068"/><text x="96.8493%" y="255.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,765,068 samples, 0.01%)</title><rect x="96.5993%" y="229" width="0.0116%" height="15" fill="rgb(220,129,5)" fg:x="23031022615" fg:w="2765068"/><text x="96.8493%" y="239.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,765,068 samples, 0.01%)</title><rect x="96.5993%" y="213" width="0.0116%" height="15" fill="rgb(242,17,10)" fg:x="23031022615" fg:w="2765068"/><text x="96.8493%" y="223.50"></text></g><g><title>[libc.so.6] (150,501,800 samples, 0.63%)</title><rect x="96.6640%" y="181" width="0.6313%" height="15" fill="rgb(242,107,0)" fg:x="23046450969" fg:w="150501800"/><text x="96.9140%" y="191.50"></text></g><g><title>[libc.so.6] (2,759,447 samples, 0.01%)</title><rect x="97.3820%" y="53" width="0.0116%" height="15" fill="rgb(251,28,31)" fg:x="23217618574" fg:w="2759447"/><text x="97.6320%" y="63.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (25,398,806 samples, 0.11%)</title><rect x="97.3068%" y="165" width="0.1065%" height="15" fill="rgb(233,223,10)" fg:x="23199698500" fg:w="25398806"/><text x="97.5568%" y="175.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (17,108,191 samples, 0.07%)</title><rect x="97.3416%" y="149" width="0.0718%" height="15" fill="rgb(215,21,27)" fg:x="23207989115" fg:w="17108191"/><text x="97.5916%" y="159.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (14,336,408 samples, 0.06%)</title><rect x="97.3532%" y="133" width="0.0601%" height="15" fill="rgb(232,23,21)" fg:x="23210760898" fg:w="14336408"/><text x="97.6032%" y="143.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (14,336,408 samples, 0.06%)</title><rect x="97.3532%" y="117" width="0.0601%" height="15" fill="rgb(244,5,23)" fg:x="23210760898" fg:w="14336408"/><text x="97.6032%" y="127.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (11,569,623 samples, 0.05%)</title><rect x="97.3648%" y="101" width="0.0485%" height="15" fill="rgb(226,81,46)" fg:x="23213527683" fg:w="11569623"/><text x="97.6148%" y="111.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (11,569,623 samples, 0.05%)</title><rect x="97.3648%" y="85" width="0.0485%" height="15" fill="rgb(247,70,30)" fg:x="23213527683" fg:w="11569623"/><text x="97.6148%" y="95.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (8,798,517 samples, 0.04%)</title><rect x="97.3764%" y="69" width="0.0369%" height="15" fill="rgb(212,68,19)" fg:x="23216298789" fg:w="8798517"/><text x="97.6264%" y="79.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (4,719,285 samples, 0.02%)</title><rect x="97.3935%" y="53" width="0.0198%" height="15" fill="rgb(240,187,13)" fg:x="23220378021" fg:w="4719285"/><text x="97.6435%" y="63.50"></text></g><g><title>__libc_calloc (2,760,950 samples, 0.01%)</title><rect x="97.4133%" y="165" width="0.0116%" height="15" fill="rgb(223,113,26)" fg:x="23225097306" fg:w="2760950"/><text x="97.6633%" y="175.50"></text></g><g><title>&lt;miniquad::graphics::gl::GlContext as miniquad::graphics::RenderingBackend&gt;::texture_update_part (195,242,702 samples, 0.82%)</title><rect x="96.6176%" y="341" width="0.8189%" height="15" fill="rgb(206,192,2)" fg:x="23035383364" fg:w="195242702"/><text x="96.8676%" y="351.50"></text></g><g><title>miniquad::graphics::gl::Texture::update_texture_part (195,242,702 samples, 0.82%)</title><rect x="96.6176%" y="325" width="0.8189%" height="15" fill="rgb(241,108,4)" fg:x="23035383364" fg:w="195242702"/><text x="96.8676%" y="335.50"></text></g><g><title>miniquad::native::gl::glTexSubImage2D (195,242,702 samples, 0.82%)</title><rect x="96.6176%" y="309" width="0.8189%" height="15" fill="rgb(247,173,49)" fg:x="23035383364" fg:w="195242702"/><text x="96.8676%" y="319.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (195,242,702 samples, 0.82%)</title><rect x="96.6176%" y="293" width="0.8189%" height="15" fill="rgb(224,114,35)" fg:x="23035383364" fg:w="195242702"/><text x="96.8676%" y="303.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (195,242,702 samples, 0.82%)</title><rect x="96.6176%" y="277" width="0.8189%" height="15" fill="rgb(245,159,27)" fg:x="23035383364" fg:w="195242702"/><text x="96.8676%" y="287.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (195,242,702 samples, 0.82%)</title><rect x="96.6176%" y="261" width="0.8189%" height="15" fill="rgb(245,172,44)" fg:x="23035383364" fg:w="195242702"/><text x="96.8676%" y="271.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (195,242,702 samples, 0.82%)</title><rect x="96.6176%" y="245" width="0.8189%" height="15" fill="rgb(236,23,11)" fg:x="23035383364" fg:w="195242702"/><text x="96.8676%" y="255.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (192,479,207 samples, 0.81%)</title><rect x="96.6292%" y="229" width="0.8073%" height="15" fill="rgb(205,117,38)" fg:x="23038146859" fg:w="192479207"/><text x="96.8792%" y="239.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (192,479,207 samples, 0.81%)</title><rect x="96.6292%" y="213" width="0.8073%" height="15" fill="rgb(237,72,25)" fg:x="23038146859" fg:w="192479207"/><text x="96.8792%" y="223.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (186,938,826 samples, 0.78%)</title><rect x="96.6524%" y="197" width="0.7841%" height="15" fill="rgb(244,70,9)" fg:x="23043687240" fg:w="186938826"/><text x="96.9024%" y="207.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (33,673,297 samples, 0.14%)</title><rect x="97.2953%" y="181" width="0.1412%" height="15" fill="rgb(217,125,39)" fg:x="23196952769" fg:w="33673297"/><text x="97.5453%" y="191.50"></text></g><g><title>snprintf (2,767,810 samples, 0.01%)</title><rect x="97.4249%" y="165" width="0.0116%" height="15" fill="rgb(235,36,10)" fg:x="23227858256" fg:w="2767810"/><text x="97.6749%" y="175.50"></text></g><g><title>[libc.so.6] (2,767,810 samples, 0.01%)</title><rect x="97.4249%" y="149" width="0.0116%" height="15" fill="rgb(251,123,47)" fg:x="23227858256" fg:w="2767810"/><text x="97.6749%" y="159.50"></text></g><g><title>[libc.so.6] (2,767,810 samples, 0.01%)</title><rect x="97.4249%" y="133" width="0.0116%" height="15" fill="rgb(221,13,13)" fg:x="23227858256" fg:w="2767810"/><text x="97.6749%" y="143.50"></text></g><g><title>[libc.so.6] (2,767,810 samples, 0.01%)</title><rect x="97.4249%" y="117" width="0.0116%" height="15" fill="rgb(238,131,9)" fg:x="23227858256" fg:w="2767810"/><text x="97.6749%" y="127.50"></text></g><g><title>[libc.so.6] (2,767,810 samples, 0.01%)</title><rect x="97.4249%" y="101" width="0.0116%" height="15" fill="rgb(211,50,8)" fg:x="23227858256" fg:w="2767810"/><text x="97.6749%" y="111.50"></text></g><g><title>macro_oscillators::grid::GridSimulation::create_blocks (13,941,853 samples, 0.06%)</title><rect x="97.4610%" y="341" width="0.0585%" height="15" fill="rgb(245,182,24)" fg:x="23236468840" fg:w="13941853"/><text x="97.7110%" y="351.50"></text></g><g><title>core::iter::range::&lt;impl core::iter::traits::iterator::Iterator for core::ops::range::Range&lt;A&gt;&gt;::next (3,005,875 samples, 0.01%)</title><rect x="97.5069%" y="325" width="0.0126%" height="15" fill="rgb(242,14,37)" fg:x="23247404818" fg:w="3005875"/><text x="97.7569%" y="335.50"></text></g><g><title>&lt;core::ops::range::Range&lt;T&gt; as core::iter::range::RangeIteratorImpl&gt;::spec_next (3,005,875 samples, 0.01%)</title><rect x="97.5069%" y="309" width="0.0126%" height="15" fill="rgb(246,228,12)" fg:x="23247404818" fg:w="3005875"/><text x="97.7569%" y="319.50"></text></g><g><title>core::cmp::impls::&lt;impl core::cmp::PartialOrd for usize&gt;::lt (3,005,875 samples, 0.01%)</title><rect x="97.5069%" y="293" width="0.0126%" height="15" fill="rgb(213,55,15)" fg:x="23247404818" fg:w="3005875"/><text x="97.7569%" y="303.50"></text></g><g><title>macroquad::Context::perform_render_passes (2,765,768 samples, 0.01%)</title><rect x="97.5195%" y="341" width="0.0116%" height="15" fill="rgb(209,9,3)" fg:x="23250410693" fg:w="2765768"/><text x="97.7695%" y="351.50"></text></g><g><title>macroquad::quad_gl::QuadGl::draw (2,765,768 samples, 0.01%)</title><rect x="97.5195%" y="325" width="0.0116%" height="15" fill="rgb(230,59,30)" fg:x="23250410693" fg:w="2765768"/><text x="97.7695%" y="335.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,765,768 samples, 0.01%)</title><rect x="97.5195%" y="309" width="0.0116%" height="15" fill="rgb(209,121,21)" fg:x="23250410693" fg:w="2765768"/><text x="97.7695%" y="319.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,765,768 samples, 0.01%)</title><rect x="97.5195%" y="293" width="0.0116%" height="15" fill="rgb(220,109,13)" fg:x="23250410693" fg:w="2765768"/><text x="97.7695%" y="303.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,765,768 samples, 0.01%)</title><rect x="97.5195%" y="277" width="0.0116%" height="15" fill="rgb(232,18,1)" fg:x="23250410693" fg:w="2765768"/><text x="97.7695%" y="287.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,765,768 samples, 0.01%)</title><rect x="97.5195%" y="261" width="0.0116%" height="15" fill="rgb(215,41,42)" fg:x="23250410693" fg:w="2765768"/><text x="97.7695%" y="271.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,765,768 samples, 0.01%)</title><rect x="97.5195%" y="245" width="0.0116%" height="15" fill="rgb(224,123,36)" fg:x="23250410693" fg:w="2765768"/><text x="97.7695%" y="255.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,765,768 samples, 0.01%)</title><rect x="97.5195%" y="229" width="0.0116%" height="15" fill="rgb(240,125,3)" fg:x="23250410693" fg:w="2765768"/><text x="97.7695%" y="239.50"></text></g><g><title>macroquad::text::Font::contains (2,772,900 samples, 0.01%)</title><rect x="97.5311%" y="341" width="0.0116%" height="15" fill="rgb(205,98,50)" fg:x="23253176461" fg:w="2772900"/><text x="97.7811%" y="351.50"></text></g><g><title>macroquad::text::atlas::Atlas::get (5,533,836 samples, 0.02%)</title><rect x="97.5427%" y="341" width="0.0232%" height="15" fill="rgb(205,185,37)" fg:x="23255949361" fg:w="5533836"/><text x="97.7927%" y="351.50"></text></g><g><title>std::collections::hash::map::HashMap&lt;K,V,S,A&gt;::get (5,533,836 samples, 0.02%)</title><rect x="97.5427%" y="325" width="0.0232%" height="15" fill="rgb(238,207,15)" fg:x="23255949361" fg:w="5533836"/><text x="97.7927%" y="335.50"></text></g><g><title>hashbrown::map::HashMap&lt;K,V,S,A&gt;::get (5,533,836 samples, 0.02%)</title><rect x="97.5427%" y="309" width="0.0232%" height="15" fill="rgb(213,199,42)" fg:x="23255949361" fg:w="5533836"/><text x="97.7927%" y="319.50"></text></g><g><title>hashbrown::raw::RawTable&lt;T,A&gt;::get (5,533,836 samples, 0.02%)</title><rect x="97.5427%" y="293" width="0.0232%" height="15" fill="rgb(235,201,11)" fg:x="23255949361" fg:w="5533836"/><text x="97.7927%" y="303.50"></text></g><g><title>hashbrown::raw::RawTable&lt;T,A&gt;::find (5,533,836 samples, 0.02%)</title><rect x="97.5427%" y="277" width="0.0232%" height="15" fill="rgb(207,46,11)" fg:x="23255949361" fg:w="5533836"/><text x="97.7927%" y="287.50"></text></g><g><title>hashbrown::raw::RawTableInner::find_inner (5,533,836 samples, 0.02%)</title><rect x="97.5427%" y="261" width="0.0232%" height="15" fill="rgb(241,35,35)" fg:x="23255949361" fg:w="5533836"/><text x="97.7927%" y="271.50"></text></g><g><title>hashbrown::raw::RawTable&lt;T,A&gt;::find::{{closure}} (5,533,836 samples, 0.02%)</title><rect x="97.5427%" y="245" width="0.0232%" height="15" fill="rgb(243,32,47)" fg:x="23255949361" fg:w="5533836"/><text x="97.7927%" y="255.50"></text></g><g><title>hashbrown::map::equivalent_key::{{closure}} (5,533,836 samples, 0.02%)</title><rect x="97.5427%" y="229" width="0.0232%" height="15" fill="rgb(247,202,23)" fg:x="23255949361" fg:w="5533836"/><text x="97.7927%" y="239.50"></text></g><g><title>&lt;Q as hashbrown::Equivalent&lt;K&gt;&gt;::equivalent (5,533,836 samples, 0.02%)</title><rect x="97.5427%" y="213" width="0.0232%" height="15" fill="rgb(219,102,11)" fg:x="23255949361" fg:w="5533836"/><text x="97.7927%" y="223.50"></text></g><g><title>core::cmp::impls::&lt;impl core::cmp::PartialEq&lt;&amp;B&gt; for &amp;A&gt;::eq (5,533,836 samples, 0.02%)</title><rect x="97.5427%" y="197" width="0.0232%" height="15" fill="rgb(243,110,44)" fg:x="23255949361" fg:w="5533836"/><text x="97.7927%" y="207.50"></text></g><g><title>&lt;macroquad::text::atlas::SpriteKey as core::cmp::PartialEq&gt;::eq (5,533,836 samples, 0.02%)</title><rect x="97.5427%" y="181" width="0.0232%" height="15" fill="rgb(222,74,54)" fg:x="23255949361" fg:w="5533836"/><text x="97.7927%" y="191.50"></text></g><g><title>miniquad::graphics::gl::load_shader (5,146,793 samples, 0.02%)</title><rect x="97.5660%" y="341" width="0.0216%" height="15" fill="rgb(216,99,12)" fg:x="23261483197" fg:w="5146793"/><text x="97.8160%" y="351.50"></text></g><g><title>miniquad::native::gl::glCompileShader (5,146,793 samples, 0.02%)</title><rect x="97.5660%" y="325" width="0.0216%" height="15" fill="rgb(226,22,26)" fg:x="23261483197" fg:w="5146793"/><text x="97.8160%" y="335.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (5,146,793 samples, 0.02%)</title><rect x="97.5660%" y="309" width="0.0216%" height="15" fill="rgb(217,163,10)" fg:x="23261483197" fg:w="5146793"/><text x="97.8160%" y="319.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (5,146,793 samples, 0.02%)</title><rect x="97.5660%" y="293" width="0.0216%" height="15" fill="rgb(213,25,53)" fg:x="23261483197" fg:w="5146793"/><text x="97.8160%" y="303.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (3,581,061 samples, 0.02%)</title><rect x="97.5725%" y="277" width="0.0150%" height="15" fill="rgb(252,105,26)" fg:x="23263048929" fg:w="3581061"/><text x="97.8225%" y="287.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (3,581,061 samples, 0.02%)</title><rect x="97.5725%" y="261" width="0.0150%" height="15" fill="rgb(220,39,43)" fg:x="23263048929" fg:w="3581061"/><text x="97.8225%" y="271.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (3,581,061 samples, 0.02%)</title><rect x="97.5725%" y="245" width="0.0150%" height="15" fill="rgb(229,68,48)" fg:x="23263048929" fg:w="3581061"/><text x="97.8225%" y="255.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (3,581,061 samples, 0.02%)</title><rect x="97.5725%" y="229" width="0.0150%" height="15" fill="rgb(252,8,32)" fg:x="23263048929" fg:w="3581061"/><text x="97.8225%" y="239.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (3,581,061 samples, 0.02%)</title><rect x="97.5725%" y="213" width="0.0150%" height="15" fill="rgb(223,20,43)" fg:x="23263048929" fg:w="3581061"/><text x="97.8225%" y="223.50"></text></g><g><title>[unknown] (1,061,446,920 samples, 4.45%)</title><rect x="93.1425%" y="357" width="4.4520%" height="15" fill="rgb(229,81,49)" fg:x="22206860625" fg:w="1061446920"/><text x="93.3925%" y="367.50">[unkn..</text></g><g><title>core::iter::range::&lt;impl core::iter::traits::iterator::Iterator for core::ops::range::Range&lt;A&gt;&gt;::next (200,060,997 samples, 0.84%)</title><rect x="98.6352%" y="325" width="0.8391%" height="15" fill="rgb(236,28,36)" fg:x="23516402858" fg:w="200060997"/><text x="98.8852%" y="335.50"></text></g><g><title>&lt;core::ops::range::Range&lt;T&gt; as core::iter::range::RangeIteratorImpl&gt;::spec_next (200,060,997 samples, 0.84%)</title><rect x="98.6352%" y="309" width="0.8391%" height="15" fill="rgb(249,185,26)" fg:x="23516402858" fg:w="200060997"/><text x="98.8852%" y="319.50"></text></g><g><title>core::cmp::impls::&lt;impl core::cmp::PartialOrd for usize&gt;::lt (200,060,997 samples, 0.84%)</title><rect x="98.6352%" y="293" width="0.8391%" height="15" fill="rgb(249,174,33)" fg:x="23516402858" fg:w="200060997"/><text x="98.8852%" y="303.50"></text></g><g><title>__frame_dummy_init_array_entry (455,928,240 samples, 1.91%)</title><rect x="97.5946%" y="357" width="1.9123%" height="15" fill="rgb(233,201,37)" fg:x="23268307545" fg:w="455928240"/><text x="97.8446%" y="367.50">_..</text></g><g><title>&lt;macro_oscillators::grid::GridSimulation as macro_oscillators::Simulation&gt;::update (455,928,240 samples, 1.91%)</title><rect x="97.5946%" y="341" width="1.9123%" height="15" fill="rgb(221,78,26)" fg:x="23268307545" fg:w="455928240"/><text x="97.8446%" y="351.50">&lt;..</text></g><g><title>std::f32::&lt;impl f32&gt;::cos (7,771,930 samples, 0.03%)</title><rect x="99.4743%" y="325" width="0.0326%" height="15" fill="rgb(250,127,30)" fg:x="23716463855" fg:w="7771930"/><text x="99.7243%" y="335.50"></text></g><g><title>cosf32 (2,755,422 samples, 0.01%)</title><rect x="99.5143%" y="357" width="0.0116%" height="15" fill="rgb(230,49,44)" fg:x="23726009799" fg:w="2755422"/><text x="99.7643%" y="367.50"></text></g><g><title>macro_oscillators::grid::GridSimulation::create_blocks (4,787,050 samples, 0.02%)</title><rect x="99.5259%" y="341" width="0.0201%" height="15" fill="rgb(229,67,23)" fg:x="23728765221" fg:w="4787050"/><text x="99.7759%" y="351.50"></text></g><g><title>macro_oscillators::grid::GridSimulation::new (6,379,939 samples, 0.03%)</title><rect x="99.5259%" y="357" width="0.0268%" height="15" fill="rgb(249,83,47)" fg:x="23728765221" fg:w="6379939"/><text x="99.7759%" y="367.50"></text></g><g><title>[libX11.so.6.4.0] (2,771,187 samples, 0.01%)</title><rect x="99.5526%" y="261" width="0.0116%" height="15" fill="rgb(215,43,3)" fg:x="23735145160" fg:w="2771187"/><text x="99.8026%" y="271.50"></text></g><g><title>core::hash::BuildHasher::hash_one (2,771,187 samples, 0.01%)</title><rect x="99.5526%" y="245" width="0.0116%" height="15" fill="rgb(238,154,13)" fg:x="23735145160" fg:w="2771187"/><text x="99.8026%" y="255.50"></text></g><g><title>core::hash::impls::&lt;impl core::hash::Hash for &amp;T&gt;::hash (2,771,187 samples, 0.01%)</title><rect x="99.5526%" y="229" width="0.0116%" height="15" fill="rgb(219,56,2)" fg:x="23735145160" fg:w="2771187"/><text x="99.8026%" y="239.50"></text></g><g><title>&lt;miniquad::event::KeyCode as core::hash::Hash&gt;::hash (2,771,187 samples, 0.01%)</title><rect x="99.5526%" y="213" width="0.0116%" height="15" fill="rgb(233,0,4)" fg:x="23735145160" fg:w="2771187"/><text x="99.8026%" y="223.50"></text></g><g><title>core::hash::impls::&lt;impl core::hash::Hash for u16&gt;::hash (2,771,187 samples, 0.01%)</title><rect x="99.5526%" y="197" width="0.0116%" height="15" fill="rgb(235,30,7)" fg:x="23735145160" fg:w="2771187"/><text x="99.8026%" y="207.50"></text></g><g><title>core::hash::Hasher::write_u16 (2,771,187 samples, 0.01%)</title><rect x="99.5526%" y="181" width="0.0116%" height="15" fill="rgb(250,79,13)" fg:x="23735145160" fg:w="2771187"/><text x="99.8026%" y="191.50"></text></g><g><title>&lt;std::hash::random::DefaultHasher as core::hash::Hasher&gt;::write (2,771,187 samples, 0.01%)</title><rect x="99.5526%" y="165" width="0.0116%" height="15" fill="rgb(211,146,34)" fg:x="23735145160" fg:w="2771187"/><text x="99.8026%" y="175.50"></text></g><g><title>&lt;core::hash::sip::SipHasher13 as core::hash::Hasher&gt;::write (2,771,187 samples, 0.01%)</title><rect x="99.5526%" y="149" width="0.0116%" height="15" fill="rgb(228,22,38)" fg:x="23735145160" fg:w="2771187"/><text x="99.8026%" y="159.50"></text></g><g><title>macroquad::window::clear_background (2,771,187 samples, 0.01%)</title><rect x="99.5526%" y="133" width="0.0116%" height="15" fill="rgb(235,168,5)" fg:x="23735145160" fg:w="2771187"/><text x="99.8026%" y="143.50"></text></g><g><title>macroquad::quad_gl::QuadGl::clear (2,771,187 samples, 0.01%)</title><rect x="99.5526%" y="117" width="0.0116%" height="15" fill="rgb(221,155,16)" fg:x="23735145160" fg:w="2771187"/><text x="99.8026%" y="127.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,771,187 samples, 0.01%)</title><rect x="99.5526%" y="101" width="0.0116%" height="15" fill="rgb(215,215,53)" fg:x="23735145160" fg:w="2771187"/><text x="99.8026%" y="111.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,771,187 samples, 0.01%)</title><rect x="99.5526%" y="85" width="0.0116%" height="15" fill="rgb(223,4,10)" fg:x="23735145160" fg:w="2771187"/><text x="99.8026%" y="95.50"></text></g><g><title>[unknown] (5,539,504 samples, 0.02%)</title><rect x="99.5526%" y="277" width="0.0232%" height="15" fill="rgb(234,103,6)" fg:x="23735145160" fg:w="5539504"/><text x="99.8026%" y="287.50"></text></g><g><title>macroquad::telemetry::ZoneGuard::new (2,768,317 samples, 0.01%)</title><rect x="99.5643%" y="261" width="0.0116%" height="15" fill="rgb(227,97,0)" fg:x="23737916347" fg:w="2768317"/><text x="99.8143%" y="271.50"></text></g><g><title>macroquad::telemetry::begin_zone (2,768,317 samples, 0.01%)</title><rect x="99.5643%" y="245" width="0.0116%" height="15" fill="rgb(234,150,53)" fg:x="23737916347" fg:w="2768317"/><text x="99.8143%" y="255.50"></text></g><g><title>macroquad::Context::begin_frame (2,389,739 samples, 0.01%)</title><rect x="99.5825%" y="245" width="0.0100%" height="15" fill="rgb(228,201,54)" fg:x="23742256597" fg:w="2389739"/><text x="99.8325%" y="255.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,389,739 samples, 0.01%)</title><rect x="99.5825%" y="229" width="0.0100%" height="15" fill="rgb(222,22,37)" fg:x="23742256597" fg:w="2389739"/><text x="99.8325%" y="239.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,389,739 samples, 0.01%)</title><rect x="99.5825%" y="213" width="0.0100%" height="15" fill="rgb(237,53,32)" fg:x="23742256597" fg:w="2389739"/><text x="99.8325%" y="223.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,389,739 samples, 0.01%)</title><rect x="99.5825%" y="197" width="0.0100%" height="15" fill="rgb(233,25,53)" fg:x="23742256597" fg:w="2389739"/><text x="99.8325%" y="207.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,389,739 samples, 0.01%)</title><rect x="99.5825%" y="181" width="0.0100%" height="15" fill="rgb(210,40,34)" fg:x="23742256597" fg:w="2389739"/><text x="99.8325%" y="191.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,389,739 samples, 0.01%)</title><rect x="99.5825%" y="165" width="0.0100%" height="15" fill="rgb(241,220,44)" fg:x="23742256597" fg:w="2389739"/><text x="99.8325%" y="175.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,389,739 samples, 0.01%)</title><rect x="99.5825%" y="149" width="0.0100%" height="15" fill="rgb(235,28,35)" fg:x="23742256597" fg:w="2389739"/><text x="99.8325%" y="159.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,389,739 samples, 0.01%)</title><rect x="99.5825%" y="133" width="0.0100%" height="15" fill="rgb(210,56,17)" fg:x="23742256597" fg:w="2389739"/><text x="99.8325%" y="143.50"></text></g><g><title>miniquad::native::gl::glFinish (2,771,100 samples, 0.01%)</title><rect x="99.5925%" y="245" width="0.0116%" height="15" fill="rgb(224,130,29)" fg:x="23744646336" fg:w="2771100"/><text x="99.8425%" y="255.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,771,100 samples, 0.01%)</title><rect x="99.5925%" y="229" width="0.0116%" height="15" fill="rgb(235,212,8)" fg:x="23744646336" fg:w="2771100"/><text x="99.8425%" y="239.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,771,100 samples, 0.01%)</title><rect x="99.5925%" y="213" width="0.0116%" height="15" fill="rgb(223,33,50)" fg:x="23744646336" fg:w="2771100"/><text x="99.8425%" y="223.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,771,100 samples, 0.01%)</title><rect x="99.5925%" y="197" width="0.0116%" height="15" fill="rgb(219,149,13)" fg:x="23744646336" fg:w="2771100"/><text x="99.8425%" y="207.50"></text></g><g><title>[libGLX_mesa.so.0.0.0] (2,771,100 samples, 0.01%)</title><rect x="99.5925%" y="181" width="0.0116%" height="15" fill="rgb(250,156,29)" fg:x="23744646336" fg:w="2771100"/><text x="99.8425%" y="191.50"></text></g><g><title>[libGLX_mesa.so.0.0.0] (2,771,100 samples, 0.01%)</title><rect x="99.5925%" y="165" width="0.0116%" height="15" fill="rgb(216,193,19)" fg:x="23744646336" fg:w="2771100"/><text x="99.8425%" y="175.50"></text></g><g><title>pthread_mutex_unlock (2,771,100 samples, 0.01%)</title><rect x="99.5925%" y="149" width="0.0116%" height="15" fill="rgb(216,135,14)" fg:x="23744646336" fg:w="2771100"/><text x="99.8425%" y="159.50"></text></g><g><title>&lt;macroquad::Stage as miniquad::event::EventHandler&gt;::draw (16,026,168 samples, 0.07%)</title><rect x="99.5825%" y="261" width="0.0672%" height="15" fill="rgb(241,47,5)" fg:x="23742256597" fg:w="16026168"/><text x="99.8325%" y="271.50"></text></g><g><title>miniquad::native::gl::glFlush (10,865,329 samples, 0.05%)</title><rect x="99.6041%" y="245" width="0.0456%" height="15" fill="rgb(233,42,35)" fg:x="23747417436" fg:w="10865329"/><text x="99.8541%" y="255.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (10,865,329 samples, 0.05%)</title><rect x="99.6041%" y="229" width="0.0456%" height="15" fill="rgb(231,13,6)" fg:x="23747417436" fg:w="10865329"/><text x="99.8541%" y="239.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (10,865,329 samples, 0.05%)</title><rect x="99.6041%" y="213" width="0.0456%" height="15" fill="rgb(207,181,40)" fg:x="23747417436" fg:w="10865329"/><text x="99.8541%" y="223.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (10,865,329 samples, 0.05%)</title><rect x="99.6041%" y="197" width="0.0456%" height="15" fill="rgb(254,173,49)" fg:x="23747417436" fg:w="10865329"/><text x="99.8541%" y="207.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (10,865,329 samples, 0.05%)</title><rect x="99.6041%" y="181" width="0.0456%" height="15" fill="rgb(221,1,38)" fg:x="23747417436" fg:w="10865329"/><text x="99.8541%" y="191.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (10,865,329 samples, 0.05%)</title><rect x="99.6041%" y="165" width="0.0456%" height="15" fill="rgb(206,124,46)" fg:x="23747417436" fg:w="10865329"/><text x="99.8541%" y="175.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (10,865,329 samples, 0.05%)</title><rect x="99.6041%" y="149" width="0.0456%" height="15" fill="rgb(249,21,11)" fg:x="23747417436" fg:w="10865329"/><text x="99.8541%" y="159.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (10,865,329 samples, 0.05%)</title><rect x="99.6041%" y="133" width="0.0456%" height="15" fill="rgb(222,201,40)" fg:x="23747417436" fg:w="10865329"/><text x="99.8541%" y="143.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (5,323,385 samples, 0.02%)</title><rect x="99.6274%" y="117" width="0.0223%" height="15" fill="rgb(235,61,29)" fg:x="23752959380" fg:w="5323385"/><text x="99.8774%" y="127.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,769,052 samples, 0.01%)</title><rect x="99.6381%" y="101" width="0.0116%" height="15" fill="rgb(219,207,3)" fg:x="23755513713" fg:w="2769052"/><text x="99.8881%" y="111.50"></text></g><g><title>XCloseDisplay (2,757,455 samples, 0.01%)</title><rect x="99.6497%" y="261" width="0.0116%" height="15" fill="rgb(222,56,46)" fg:x="23758282765" fg:w="2757455"/><text x="99.8997%" y="271.50"></text></g><g><title>[libGLX_mesa.so.0.0.0] (2,757,455 samples, 0.01%)</title><rect x="99.6497%" y="245" width="0.0116%" height="15" fill="rgb(239,76,54)" fg:x="23758282765" fg:w="2757455"/><text x="99.8997%" y="255.50"></text></g><g><title>[libGLX_mesa.so.0.0.0] (2,757,455 samples, 0.01%)</title><rect x="99.6497%" y="229" width="0.0116%" height="15" fill="rgb(231,124,27)" fg:x="23758282765" fg:w="2757455"/><text x="99.8997%" y="239.50"></text></g><g><title>[libGLX_mesa.so.0.0.0] (2,757,455 samples, 0.01%)</title><rect x="99.6497%" y="213" width="0.0116%" height="15" fill="rgb(249,195,6)" fg:x="23758282765" fg:w="2757455"/><text x="99.8997%" y="223.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,757,455 samples, 0.01%)</title><rect x="99.6497%" y="197" width="0.0116%" height="15" fill="rgb(237,174,47)" fg:x="23758282765" fg:w="2757455"/><text x="99.8997%" y="207.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,757,455 samples, 0.01%)</title><rect x="99.6497%" y="181" width="0.0116%" height="15" fill="rgb(206,201,31)" fg:x="23758282765" fg:w="2757455"/><text x="99.8997%" y="191.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,757,455 samples, 0.01%)</title><rect x="99.6497%" y="165" width="0.0116%" height="15" fill="rgb(231,57,52)" fg:x="23758282765" fg:w="2757455"/><text x="99.8997%" y="175.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,757,455 samples, 0.01%)</title><rect x="99.6497%" y="149" width="0.0116%" height="15" fill="rgb(248,177,22)" fg:x="23758282765" fg:w="2757455"/><text x="99.8997%" y="159.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,757,455 samples, 0.01%)</title><rect x="99.6497%" y="133" width="0.0116%" height="15" fill="rgb(215,211,37)" fg:x="23758282765" fg:w="2757455"/><text x="99.8997%" y="143.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,757,455 samples, 0.01%)</title><rect x="99.6497%" y="117" width="0.0116%" height="15" fill="rgb(241,128,51)" fg:x="23758282765" fg:w="2757455"/><text x="99.8997%" y="127.50"></text></g><g><title>[libc.so.6] (2,757,455 samples, 0.01%)</title><rect x="99.6497%" y="101" width="0.0116%" height="15" fill="rgb(227,165,31)" fg:x="23758282765" fg:w="2757455"/><text x="99.8997%" y="111.50"></text></g><g><title>XFlush (2,770,862 samples, 0.01%)</title><rect x="99.6613%" y="261" width="0.0116%" height="15" fill="rgb(228,167,24)" fg:x="23761040220" fg:w="2770862"/><text x="99.9113%" y="271.50"></text></g><g><title>_XFlush (2,770,862 samples, 0.01%)</title><rect x="99.6613%" y="245" width="0.0116%" height="15" fill="rgb(228,143,12)" fg:x="23761040220" fg:w="2770862"/><text x="99.9113%" y="255.50"></text></g><g><title>XPending (2,770,479 samples, 0.01%)</title><rect x="99.6729%" y="261" width="0.0116%" height="15" fill="rgb(249,149,8)" fg:x="23763811082" fg:w="2770479"/><text x="99.9229%" y="271.50"></text></g><g><title>[libGLX_mesa.so.0.0.0] (2,762,609 samples, 0.01%)</title><rect x="99.6942%" y="245" width="0.0116%" height="15" fill="rgb(243,35,44)" fg:x="23768903002" fg:w="2762609"/><text x="99.9442%" y="255.50"></text></g><g><title>[libGLX_mesa.so.0.0.0] (2,762,609 samples, 0.01%)</title><rect x="99.6942%" y="229" width="0.0116%" height="15" fill="rgb(246,89,9)" fg:x="23768903002" fg:w="2762609"/><text x="99.9442%" y="239.50"></text></g><g><title>loader_dri3_swap_buffers_msc (2,762,609 samples, 0.01%)</title><rect x="99.6942%" y="213" width="0.0116%" height="15" fill="rgb(233,213,13)" fg:x="23768903002" fg:w="2762609"/><text x="99.9442%" y="223.50"></text></g><g><title>[libGLX.so.0.0.0] (2,762,562 samples, 0.01%)</title><rect x="99.7058%" y="213" width="0.0116%" height="15" fill="rgb(233,141,41)" fg:x="23771665611" fg:w="2762562"/><text x="99.9558%" y="223.50"></text></g><g><title>macro_oscillators::main (42,050,488 samples, 0.18%)</title><rect x="99.5526%" y="357" width="0.1764%" height="15" fill="rgb(239,167,4)" fg:x="23735145160" fg:w="42050488"/><text x="99.8026%" y="367.50"></text></g><g><title>macroquad::Window::new (42,050,488 samples, 0.18%)</title><rect x="99.5526%" y="341" width="0.1764%" height="15" fill="rgb(209,217,16)" fg:x="23735145160" fg:w="42050488"/><text x="99.8026%" y="351.50"></text></g><g><title>macroquad::Window::from_config (42,050,488 samples, 0.18%)</title><rect x="99.5526%" y="325" width="0.1764%" height="15" fill="rgb(219,88,35)" fg:x="23735145160" fg:w="42050488"/><text x="99.8026%" y="335.50"></text></g><g><title>miniquad::start (42,050,488 samples, 0.18%)</title><rect x="99.5526%" y="309" width="0.1764%" height="15" fill="rgb(220,193,23)" fg:x="23735145160" fg:w="42050488"/><text x="99.8026%" y="319.50"></text></g><g><title>miniquad::native::linux_x11::run (42,050,488 samples, 0.18%)</title><rect x="99.5526%" y="293" width="0.1764%" height="15" fill="rgb(230,90,52)" fg:x="23735145160" fg:w="42050488"/><text x="99.8026%" y="303.50"></text></g><g><title>miniquad::native::linux_x11::glx_main_loop (34,939,051 samples, 0.15%)</title><rect x="99.5825%" y="277" width="0.1465%" height="15" fill="rgb(252,106,19)" fg:x="23742256597" fg:w="34939051"/><text x="99.8325%" y="287.50"></text></g><g><title>miniquad::native::linux_x11::glx::Glx::swap_buffers (8,292,646 samples, 0.03%)</title><rect x="99.6942%" y="261" width="0.0348%" height="15" fill="rgb(206,74,20)" fg:x="23768903002" fg:w="8292646"/><text x="99.9442%" y="271.50"></text></g><g><title>glXSwapBuffers (5,530,037 samples, 0.02%)</title><rect x="99.7058%" y="245" width="0.0232%" height="15" fill="rgb(230,138,44)" fg:x="23771665611" fg:w="5530037"/><text x="99.9558%" y="255.50"></text></g><g><title>[libGLX.so.0.0.0] (5,530,037 samples, 0.02%)</title><rect x="99.7058%" y="229" width="0.0232%" height="15" fill="rgb(235,182,43)" fg:x="23771665611" fg:w="5530037"/><text x="99.9558%" y="239.50"></text></g><g><title>__getpid (2,767,475 samples, 0.01%)</title><rect x="99.7174%" y="213" width="0.0116%" height="15" fill="rgb(242,16,51)" fg:x="23774428173" fg:w="2767475"/><text x="99.9674%" y="223.50"></text></g><g><title>[unknown] (2,767,475 samples, 0.01%)</title><rect x="99.7174%" y="197" width="0.0116%" height="15" fill="rgb(248,9,4)" fg:x="23774428173" fg:w="2767475"/><text x="99.9674%" y="207.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (2,587,161 samples, 0.01%)</title><rect x="99.8035%" y="213" width="0.0109%" height="15" fill="rgb(210,31,22)" fg:x="23794955966" fg:w="2587161"/><text x="100.0535%" y="223.50"></text></g><g><title>[libGLX_mesa.so.0.0.0] (22,687,077 samples, 0.10%)</title><rect x="99.7290%" y="245" width="0.0952%" height="15" fill="rgb(239,54,39)" fg:x="23777195648" fg:w="22687077"/><text x="99.9790%" y="255.50"></text></g><g><title>driIndexConfigAttrib (7,362,558 samples, 0.03%)</title><rect x="99.7933%" y="229" width="0.0309%" height="15" fill="rgb(230,99,41)" fg:x="23792520167" fg:w="7362558"/><text x="100.0433%" y="239.50"></text></g><g><title>[libGLX_mesa.so.0.0.0] (28,360,305 samples, 0.12%)</title><rect x="99.7290%" y="325" width="0.1190%" height="15" fill="rgb(253,106,12)" fg:x="23777195648" fg:w="28360305"/><text x="99.9790%" y="335.50"></text></g><g><title>[libGLX_mesa.so.0.0.0] (28,360,305 samples, 0.12%)</title><rect x="99.7290%" y="309" width="0.1190%" height="15" fill="rgb(213,46,41)" fg:x="23777195648" fg:w="28360305"/><text x="99.9790%" y="319.50"></text></g><g><title>[libGLX_mesa.so.0.0.0] (28,360,305 samples, 0.12%)</title><rect x="99.7290%" y="293" width="0.1190%" height="15" fill="rgb(215,133,35)" fg:x="23777195648" fg:w="28360305"/><text x="99.9790%" y="303.50"></text></g><g><title>[libGLX_mesa.so.0.0.0] (28,360,305 samples, 0.12%)</title><rect x="99.7290%" y="277" width="0.1190%" height="15" fill="rgb(213,28,5)" fg:x="23777195648" fg:w="28360305"/><text x="99.9790%" y="287.50"></text></g><g><title>[libGLX_mesa.so.0.0.0] (28,360,305 samples, 0.12%)</title><rect x="99.7290%" y="261" width="0.1190%" height="15" fill="rgb(215,77,49)" fg:x="23777195648" fg:w="28360305"/><text x="99.9790%" y="271.50"></text></g><g><title>driCreateNewScreen3 (5,673,228 samples, 0.02%)</title><rect x="99.8242%" y="245" width="0.0238%" height="15" fill="rgb(248,100,22)" fg:x="23799882725" fg:w="5673228"/><text x="100.0742%" y="255.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (5,673,228 samples, 0.02%)</title><rect x="99.8242%" y="229" width="0.0238%" height="15" fill="rgb(208,67,9)" fg:x="23799882725" fg:w="5673228"/><text x="100.0742%" y="239.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (5,673,228 samples, 0.02%)</title><rect x="99.8242%" y="213" width="0.0238%" height="15" fill="rgb(219,133,21)" fg:x="23799882725" fg:w="5673228"/><text x="100.0742%" y="223.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (5,673,228 samples, 0.02%)</title><rect x="99.8242%" y="197" width="0.0238%" height="15" fill="rgb(246,46,29)" fg:x="23799882725" fg:w="5673228"/><text x="100.0742%" y="207.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (3,918,454 samples, 0.02%)</title><rect x="99.8315%" y="181" width="0.0164%" height="15" fill="rgb(246,185,52)" fg:x="23801637499" fg:w="3918454"/><text x="100.0815%" y="191.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (3,918,454 samples, 0.02%)</title><rect x="99.8315%" y="165" width="0.0164%" height="15" fill="rgb(252,136,11)" fg:x="23801637499" fg:w="3918454"/><text x="100.0815%" y="175.50"></text></g><g><title>[libgallium-26.0.3-arch2.2.so] (3,918,454 samples, 0.02%)</title><rect x="99.8315%" y="149" width="0.0164%" height="15" fill="rgb(219,138,53)" fg:x="23801637499" fg:w="3918454"/><text x="100.0815%" y="159.50"></text></g><g><title>[ld-linux-x86-64.so.2] (20,773,976 samples, 0.09%)</title><rect x="99.8480%" y="101" width="0.0871%" height="15" fill="rgb(211,51,23)" fg:x="23805555953" fg:w="20773976"/><text x="100.0980%" y="111.50"></text></g><g><title>[ld-linux-x86-64.so.2] (18,680,788 samples, 0.08%)</title><rect x="99.8567%" y="85" width="0.0784%" height="15" fill="rgb(247,221,28)" fg:x="23807649141" fg:w="18680788"/><text x="100.1067%" y="95.50"></text></g><g><title>[ld-linux-x86-64.so.2] (15,640,476 samples, 0.07%)</title><rect x="99.8695%" y="69" width="0.0656%" height="15" fill="rgb(251,222,45)" fg:x="23810689453" fg:w="15640476"/><text x="100.1195%" y="79.50"></text></g><g><title>glXQueryExtensionsString (25,420,198 samples, 0.11%)</title><rect x="99.8480%" y="325" width="0.1066%" height="15" fill="rgb(217,162,53)" fg:x="23805555953" fg:w="25420198"/><text x="100.0980%" y="335.50"></text></g><g><title>[libGLX.so.0.0.0] (25,420,198 samples, 0.11%)</title><rect x="99.8480%" y="309" width="0.1066%" height="15" fill="rgb(229,93,14)" fg:x="23805555953" fg:w="25420198"/><text x="100.0980%" y="319.50"></text></g><g><title>[libGLX.so.0.0.0] (25,420,198 samples, 0.11%)</title><rect x="99.8480%" y="293" width="0.1066%" height="15" fill="rgb(209,67,49)" fg:x="23805555953" fg:w="25420198"/><text x="100.0980%" y="303.50"></text></g><g><title>dlopen (25,420,198 samples, 0.11%)</title><rect x="99.8480%" y="277" width="0.1066%" height="15" fill="rgb(213,87,29)" fg:x="23805555953" fg:w="25420198"/><text x="100.0980%" y="287.50"></text></g><g><title>[libc.so.6] (25,420,198 samples, 0.11%)</title><rect x="99.8480%" y="261" width="0.1066%" height="15" fill="rgb(205,151,52)" fg:x="23805555953" fg:w="25420198"/><text x="100.0980%" y="271.50"></text></g><g><title>[ld-linux-x86-64.so.2] (25,420,198 samples, 0.11%)</title><rect x="99.8480%" y="245" width="0.1066%" height="15" fill="rgb(253,215,39)" fg:x="23805555953" fg:w="25420198"/><text x="100.0980%" y="255.50"></text></g><g><title>_dl_catch_exception (25,420,198 samples, 0.11%)</title><rect x="99.8480%" y="229" width="0.1066%" height="15" fill="rgb(221,220,41)" fg:x="23805555953" fg:w="25420198"/><text x="100.0980%" y="239.50"></text></g><g><title>[libc.so.6] (25,420,198 samples, 0.11%)</title><rect x="99.8480%" y="213" width="0.1066%" height="15" fill="rgb(218,133,21)" fg:x="23805555953" fg:w="25420198"/><text x="100.0980%" y="223.50"></text></g><g><title>[ld-linux-x86-64.so.2] (25,420,198 samples, 0.11%)</title><rect x="99.8480%" y="197" width="0.1066%" height="15" fill="rgb(221,193,43)" fg:x="23805555953" fg:w="25420198"/><text x="100.0980%" y="207.50"></text></g><g><title>_dl_catch_exception (25,420,198 samples, 0.11%)</title><rect x="99.8480%" y="181" width="0.1066%" height="15" fill="rgb(240,128,52)" fg:x="23805555953" fg:w="25420198"/><text x="100.0980%" y="191.50"></text></g><g><title>[ld-linux-x86-64.so.2] (25,420,198 samples, 0.11%)</title><rect x="99.8480%" y="165" width="0.1066%" height="15" fill="rgb(253,114,12)" fg:x="23805555953" fg:w="25420198"/><text x="100.0980%" y="175.50"></text></g><g><title>_dl_catch_exception (25,420,198 samples, 0.11%)</title><rect x="99.8480%" y="149" width="0.1066%" height="15" fill="rgb(215,223,47)" fg:x="23805555953" fg:w="25420198"/><text x="100.0980%" y="159.50"></text></g><g><title>[ld-linux-x86-64.so.2] (25,420,198 samples, 0.11%)</title><rect x="99.8480%" y="133" width="0.1066%" height="15" fill="rgb(248,225,23)" fg:x="23805555953" fg:w="25420198"/><text x="100.0980%" y="143.50"></text></g><g><title>[ld-linux-x86-64.so.2] (25,420,198 samples, 0.11%)</title><rect x="99.8480%" y="117" width="0.1066%" height="15" fill="rgb(250,108,0)" fg:x="23805555953" fg:w="25420198"/><text x="100.0980%" y="127.50"></text></g><g><title>[libGLX_mesa.so.0.0.0] (2,518,298 samples, 0.01%)</title><rect x="99.9546%" y="293" width="0.0106%" height="15" fill="rgb(228,208,7)" fg:x="23830976151" fg:w="2518298"/><text x="100.2046%" y="303.50"></text></g><g><title>[libGLX.so.0.0.0] (2,623,973 samples, 0.01%)</title><rect x="99.9651%" y="277" width="0.0110%" height="15" fill="rgb(244,45,10)" fg:x="23833494449" fg:w="2623973"/><text x="100.2151%" y="287.50"></text></g><g><title>[libGLX.so.0.0.0] (2,623,973 samples, 0.01%)</title><rect x="99.9651%" y="261" width="0.0110%" height="15" fill="rgb(207,125,25)" fg:x="23833494449" fg:w="2623973"/><text x="100.2151%" y="271.50"></text></g><g><title>__getpid (2,623,973 samples, 0.01%)</title><rect x="99.9651%" y="245" width="0.0110%" height="15" fill="rgb(210,195,18)" fg:x="23833494449" fg:w="2623973"/><text x="100.2151%" y="255.50"></text></g><g><title>[unknown] (2,623,973 samples, 0.01%)</title><rect x="99.9651%" y="229" width="0.0110%" height="15" fill="rgb(249,80,12)" fg:x="23833494449" fg:w="2623973"/><text x="100.2151%" y="239.50"></text></g><g><title>miniquad::native::linux_x11::glx_main_loop (61,337,359 samples, 0.26%)</title><rect x="99.7290%" y="357" width="0.2573%" height="15" fill="rgb(221,65,9)" fg:x="23777195648" fg:w="61337359"/><text x="99.9790%" y="367.50"></text></g><g><title>miniquad::native::linux_x11::glx::Glx::init (61,337,359 samples, 0.26%)</title><rect x="99.7290%" y="341" width="0.2573%" height="15" fill="rgb(235,49,36)" fg:x="23777195648" fg:w="61337359"/><text x="99.9790%" y="351.50"></text></g><g><title>miniquad::native::linux_x11::glx::choose_fbconfig (7,556,856 samples, 0.03%)</title><rect x="99.9546%" y="325" width="0.0317%" height="15" fill="rgb(225,32,20)" fg:x="23830976151" fg:w="7556856"/><text x="100.2046%" y="335.50"></text></g><g><title>miniquad::native::linux_x11::glx::choose_fbconfig::{{closure}} (7,556,856 samples, 0.03%)</title><rect x="99.9546%" y="309" width="0.0317%" height="15" fill="rgb(215,141,46)" fg:x="23830976151" fg:w="7556856"/><text x="100.2046%" y="319.50"></text></g><g><title>glXGetFBConfigAttrib (5,038,558 samples, 0.02%)</title><rect x="99.9651%" y="293" width="0.0211%" height="15" fill="rgb(250,160,47)" fg:x="23833494449" fg:w="5038558"/><text x="100.2151%" y="303.50"></text></g><g><title>pthread_mutex_unlock (2,414,585 samples, 0.01%)</title><rect x="99.9762%" y="277" width="0.0101%" height="15" fill="rgb(216,222,40)" fg:x="23836118422" fg:w="2414585"/><text x="100.2262%" y="287.50"></text></g><g><title>all (23,841,803,894 samples, 100%)</title><rect x="0.0000%" y="389" width="100.0000%" height="15" fill="rgb(234,217,39)" fg:x="0" fg:w="23841803894"/><text x="0.2500%" y="399.50"></text></g><g><title>macro_oscillato (23,841,803,894 samples, 100.00%)</title><rect x="0.0000%" y="373" width="100.0000%" height="15" fill="rgb(207,178,40)" fg:x="0" fg:w="23841803894"/><text x="0.2500%" y="383.50">macro_oscillato</text></g><g><title>xcb_flush (2,769,383 samples, 0.01%)</title><rect x="99.9884%" y="357" width="0.0116%" height="15" fill="rgb(221,136,13)" fg:x="23839034511" fg:w="2769383"/><text x="100.2384%" y="367.50"></text></g></svg></svg>
