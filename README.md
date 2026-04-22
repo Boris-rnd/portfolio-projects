@@ -5,3 +5,5 @@ Nearly all the projects have a separate readme with description and preview scre
 And also this is my leetcode score:
 
 ![Leetcode progress](leetcode_progress.png)
+
+Btw you can see some previews of the projects on my user profile repo: [Boris-Rnd](https://github.com/Boris-rnd/Boris-rnd)
