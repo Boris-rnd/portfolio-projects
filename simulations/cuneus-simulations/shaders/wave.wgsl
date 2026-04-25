@@ -13,7 +13,9 @@ struct TimeUniform {
 struct Params {
     cell_count: u32,
     speed: f32,
-    reset: u32,
+    // fst bit = reset
+    // snd bit = edge damping
+    flags: u32,
     scene: u32,
     camera_pos_x: f32,
     camera_pos_y: f32,
@@ -63,14 +65,14 @@ fn update(@builtin(global_invocation_id) id: vec3<u32>) {
     let dims = vec2(800u, 600u);
     let pos = vec2(u32(i) % dims.x, i / dims.x);
 
-    if (params.reset > 0u || time_data.frame == 0u) {
+    if (((params.flags & 1u) == 1u) || time_data.frame == 0u) {
         // Initialize or reset particle
         cell.y = 0.;
         cell.mass = 1.0;
         cell.accumulated_height = 0.;
 
         if (params.scene == 1u) { // Prism
-            let d = triangle(vec2<f32>(pos) * 300.0 + vec2<f32>(100.0, 200.0));
+            let d = triangle(vec2<f32>(pos) / (vec2<f32>(dims)/5.0) - vec2<f32>(2.5, 3.0));
             if (d < 0.0) {
                 let INDEX_OF_REFRACTION = 0.6; // 3.0 / 5.0
                 cell.mass = 1.0 / INDEX_OF_REFRACTION;
@@ -107,10 +109,20 @@ fn update(@builtin(global_invocation_id) id: vec3<u32>) {
         var vel = y_curr - y_prev;
         vel += a * time_data.delta * time_data.delta * params.speed * params.speed;
 
-        // Edge damping applied to velocity
-        let edge_dist = min(min(pos.x, pos.y), min(dims.x - pos.x, dims.y - pos.y));
-        if (edge_dist < 50u) {
-            vel *= 0.9;
+        // Let waves pass through edge as if the medium was infinite using a sponge layer
+        if ((params.flags & 2u) == 2u) {
+            let margin = 64.0;
+            let dist_x = min(f32(pos.x), f32(dims.x) - 1.0 - f32(pos.x));
+            let dist_y = min(f32(pos.y), f32(dims.y) - 1.0 - f32(pos.y));
+            let edge_dist = min(dist_x, dist_y);
+            
+            if (edge_dist < margin) {
+                let normalized = edge_dist / margin;
+                // Cubic falloff for smooth impedance transition (prevents damping itself from causing reflections, this took a lot of trial and error)
+                let damping = pow(1.0 - normalized, 3.0) * 0.12;
+                vel *= (1.0 - damping);
+                cell.y *= (1.0 - damping * 0.5); // Damp displacement to prevent accumulation at the boundary
+            }
         }
 
         let new_y = y_curr + vel;
@@ -125,7 +137,11 @@ fn update(@builtin(global_invocation_id) id: vec3<u32>) {
         if (time_data.time < 1.0) {
             let FREQUENCY = 600.0;
             let RADIUS = 0.015;
-            let wave_emit = circleWave(vec2<f32>(pos) / vec2<f32>(dims) * rot(-0.625), vec2<f32>(0.5, 0.15), FREQUENCY, RADIUS, time_data.time);
+            var origin = vec2<f32>(0.2, -0.5);
+            if (params.scene == 1u) { // Prism
+                origin = vec2<f32>(0.2, -0.4);
+            }
+            let wave_emit = circleWave(vec2<f32>(pos) / vec2<f32>(dims) * rot(-PI/2.0), origin, FREQUENCY, RADIUS, time_data.time);
             cell.y = wave_emit;
         }
     }
@@ -187,7 +203,11 @@ fn render(@builtin(global_invocation_id) id: vec3<u32>) {
         }
     } else {
         if (pos_px.x < dims.x && pos_px.y < dims.y) {
-            textureStore(output, vec2<i32>(pos_px.xy), vec4<f32>(cell.y, abs(cell.y) / 100., cell.mass / 100., 1.));
+            var b = cell.mass / 200.;
+            if (cell.mass>1.5) {
+                b = 0.5;
+            }
+            textureStore(output, vec2<i32>(pos_px.xy), vec4<f32>(cell.y*20., abs(cell.y) / 100., b, 1.));
             // Added for debugging
             // if cell.y != 0. {
             //     textureStore(output, vec2<i32>(pos_px.xy), vec4<f32>(1., abs(cell.y) / 100., 1., 1.));

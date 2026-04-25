@@ -12,7 +12,9 @@ cuneus::uniform_params! {
     struct ShaderParams {
     cell_count: u32,
     speed: f32,
-    reset: u32,
+    // fst bit = reset
+    // snd bit = edge damping
+    flags: u32,
     scene: u32,
     camera_pos: [f32; 2],
     camera_zoom: f32,
@@ -63,8 +65,8 @@ impl ShaderManager for WaveSimulation {
         let params = ShaderParams {
             cell_count: cell_count as u32,
             speed: 1.0,
-            reset: 1,
-            scene: 0,
+            flags: 0b1,
+            scene: 1,
             camera_pos: [-0.5, -0.5],
             camera_zoom: 1.0,
             drag: 0.1,
@@ -131,6 +133,9 @@ impl ShaderManager for WaveSimulation {
     fn render(&mut self, core: &Core) -> Result<(), SurfaceError> {
         let mut frame = self.base.begin_frame(core)?;
 
+        // Needed because not using dispatch anymore
+        self.compute_shader.check_hot_reload(&core.device);
+
         // Update time and params
         let current_time = self.base.controls.get_time(&self.base.start_time);
         self.compute_shader.set_time(current_time, 1.0 / 60.0, &core.queue);
@@ -155,8 +160,16 @@ impl ShaderManager for WaveSimulation {
                 ui.add(egui::Slider::new(&mut self.params.camera_pos[0], -1.0..=1.0).text("Camera x").clamping(egui::SliderClamping::Never));
                 ui.add(egui::Slider::new(&mut self.params.camera_pos[1], -1.0..=1.0).text("Camera y").clamping(egui::SliderClamping::Never));
                 ui.add(egui::Slider::new(&mut self.params.scene, 0..=2).text("Scene (0=Wave, 1=Prism, 2=Slit)"));
+                let mut edge_damping = (self.params.flags & 2u32) == 2u32;
+                if ui.checkbox(&mut edge_damping, "Edge damping").changed() {
+                    if edge_damping {
+                        self.params.flags |= 2u32;
+                    } else {
+                        self.params.flags &= !2u32;
+                    }
+                }
                 if ui.button("Reset").clicked() {
-                    self.params.reset = 1;
+                    self.params.flags |= 1;
                 }
                 ui.separator();
                 ShaderControls::render_controls_widget(ui, &mut controls_request);
@@ -205,7 +218,7 @@ impl ShaderManager for WaveSimulation {
             render_workgroups,
         );
 
-        if self.params.reset == 1 {
+        if self.params.flags & 1 == 1 {
             self.base.start_time = std::time::Instant::now();
         }
 
@@ -217,7 +230,7 @@ impl ShaderManager for WaveSimulation {
         );
 
         self.base.end_frame(core, frame, full_output);
-        self.params.reset = 0;
+        self.params.flags &= !1;
         Ok(())
     }
 
