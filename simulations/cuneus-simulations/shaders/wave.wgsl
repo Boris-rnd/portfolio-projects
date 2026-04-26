@@ -78,10 +78,11 @@ fn update(@builtin(global_invocation_id) id: vec3<u32>) {
                 cell.mass = 1.0 / INDEX_OF_REFRACTION;
             }
         } else if (params.scene == 2u || true) { // Double Slit
-            if (pos.y > 400 && pos.y < 420) {
+            if (pos.y > 250 && pos.y < 270) {
                 let slit_width = 10;
-                if (((i32(pos.x) - 350) > slit_width || (i32(pos.x) - 350) < -slit_width) &&
-                    ((i32(pos.x) - 450) > slit_width || (i32(pos.x) - 450) < -slit_width)) {
+                let slit_height = 40;
+                if (((i32(pos.x) - (400-slit_height/2)) > slit_width || (i32(pos.x) - (400-slit_height/2)) < -slit_width) &&
+                    ((i32(pos.x) - (400+slit_height/2)) > slit_width || (i32(pos.x) - (400+slit_height/2)) < -slit_width)) {
                     cell.mass = 1000000.0;
                 }
             }
@@ -135,7 +136,7 @@ fn update(@builtin(global_invocation_id) id: vec3<u32>) {
         // }
 
         if (time_data.time < 1.0) {
-            let FREQUENCY = 600.0;
+            let FREQUENCY = 230.0*PI;
             let RADIUS = 0.015;
             var origin = vec2<f32>(0.2, -0.5);
             if (params.scene == 1u) { // Prism
@@ -207,7 +208,8 @@ fn render(@builtin(global_invocation_id) id: vec3<u32>) {
             if (cell.mass>1.5) {
                 b = 0.5;
             }
-            textureStore(output, vec2<i32>(pos_px.xy), vec4<f32>(cell.y*20., abs(cell.y) / 100., b, 1.));
+            // textureStore(output, vec2<i32>(pos_px.xy), vec4<f32>(cell.y*20., abs(cell.y) / 100., b, 1.));
+            textureStore(output, vec2<i32>(pos_px.xy), vec4<f32>(cell.accumulated_height/200., cell.y * 1., b, 1.));
             // Added for debugging
             // if cell.y != 0. {
             //     textureStore(output, vec2<i32>(pos_px.xy), vec4<f32>(1., abs(cell.y) / 100., 1., 1.));
