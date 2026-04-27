@@ -61,9 +61,9 @@ impl ShaderManager for WaveSchrodingerSimulation {
 
         let params = ShaderParams {
             cell_count: cell_count as u32,
-            speed: 1.0,
+            speed: 2.0,
             flags: 0b11, // Default edge damping
-            scene: 1,
+            scene: 2,
             camera_pos: [-0.5, -0.5],
             camera_zoom: 1.0,
             drag: 0.1,
@@ -184,7 +184,7 @@ impl ShaderManager for WaveSchrodingerSimulation {
         let render_workgroups = [cell_count.div_ceil(64), 1, 1];
 
         // ---------- update: runs N times, ping-pong flips each iteration ----------
-        let iterations: u32 = 35;
+        let iterations: u32 = 20;
         for _ in 0..iterations {
             self.compute_shader.set_custom_params(self.params, &core.queue);
             self.compute_shader.dispatch_stage_with_workgroups(

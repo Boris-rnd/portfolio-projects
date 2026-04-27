@@ -55,10 +55,21 @@ fn read_cell(i: u32) -> Cell {
 fn read_laplacian(i: u32) -> vec2<f32> {
     let dims = vec2(800u, 600u);
     let cell = read_cell(i);
-    let left = read_cell(i - 1u);
-    let right = read_cell(i + 1u);
-    let up = read_cell(i - dims.x);
-    let down = read_cell(i + dims.x);
+    var left = read_cell(i - 1u);
+    var right = read_cell(i + 1u);
+    var up = read_cell(i - dims.x);
+    var down = read_cell(i + dims.x);
+    // Wanted to make perfect floating boundaries, but seems more complicated than that... :c
+    // Check for each side, make it mirror to current cell to make floating boundaries
+    // if ((params.flags & 2u) == 2u) {
+    //     
+    //     if (i % dims.x == 0u) { left = cell; }
+    //     if ((i + 1u) % dims.x == 0u) { right = cell; }
+    //     if (i < dims.x) { up = cell; }
+    //     if (i >= params.cell_count - dims.x) { down = cell; }
+    // }
+    // TODO: Support periodic boundaries
+    // See: https://en.wikipedia.org/wiki/Born%E2%80%93von_Karman_boundary_condition
     return vec2<f32>(left.real_y + right.real_y + up.real_y + down.real_y - 4.0 * cell.real_y, left.imag_y + right.imag_y + up.imag_y + down.imag_y - 4.0 * cell.imag_y);
 }
 fn write_cell(i: u32, cell: Cell) {
@@ -70,7 +81,22 @@ fn get_potential(pos: vec2<u32>) -> f32 {
         let dims = vec2(800u, 600u);
         let normalized_pos = vec2<f32>(pos) / vec2<f32>(dims);
         let uv = normalized_pos - vec2<f32>(0.5, 0.5);
-        return -10.0*(uv.x*uv.x+uv.y*uv.y);
+        let dist = length(uv+vec2(0.0, -0.0));
+        // if dist < 0.25 {
+        //     return -0.1; // + or - to bounce 4.4*(dist*dist)
+        // }
+        // if dist<0.01 {return 0.1;}
+        // return -1.1/max(dist*dist, 0.1);
+        // return smoothstep(0.2, 0.2001, dist) * 6.0;
+        // Tunnel effect demonstration !!!
+        if (uv.y > 0.1 && uv.y < 0.11) { return 0.5; }
+        //TODO Localisation d'Anderson with random potential
+        // 4. Lentille Magnétique (Prisme)
+        // Crée une zone avec un gradient de potentiel.
+        // Logique : Un triangle ou un cercle où le potentiel change linéairement.
+        // Effet : Tu peux dévier ou focaliser ton paquet d'ondes comme s'il s'agissait de lumière traversant une lentille en verre.
+        // TODO: Make quantum well work
+        // TODO Double slit !
     }
     return 0.;
 }
@@ -140,7 +166,6 @@ fn update(@builtin(global_invocation_id) id: vec3<u32>) {
             new_psi = vec2<f32>(psi_curr.x, psi_curr.y + d_imag * dt * 2.0);
         }
 
-
         cell.real_y = new_psi.x/cell.mass;
         cell.imag_y = new_psi.y/cell.mass;
         // We just updated cell.real_y and cell.imag_y, so they now hold the new state.
@@ -158,21 +183,30 @@ fn update(@builtin(global_invocation_id) id: vec3<u32>) {
 
         // Let waves pass through edge as if the medium was infinite using a sponge layer
         if ((params.flags & 2u) == 2u) {
-            let margin = 64.0;
-            let dist_x = min(f32(pos.x), f32(dims.x) - 1.0 - f32(pos.x));
-            let dist_y = min(f32(pos.y), f32(dims.y) - 1.0 - f32(pos.y));
-            let edge_dist = min(dist_x, dist_y);
+        //     let margin = 64.0;
+        //     let dist_x = min(f32(pos.x), f32(dims.x) - 1.0 - f32(pos.x));
+        //     let dist_y = min(f32(pos.y), f32(dims.y) - 1.0 - f32(pos.y));
+        //     let edge_dist = min(dist_x, dist_y);
             
+        //     if (edge_dist < margin) {
+        //         let normalized = edge_dist / margin;
+        //         // Cubic falloff for smooth impedance transition (prevents damping itself from causing reflections, this took a lot of trial and error)
+        //         let damping = pow(1.0 - normalized, 3.0) * 0.12;
+        //         // vel *= (1.0 - damping);
+        //         cell.real_y *= (1.0 - damping * 0.5); // Damp displacement to prevent accumulation at the boundary
+        //         cell.imag_y *= (1.0 - damping * 0.5); // Damp displacement to prevent accumulation at the boundary
+        //     }
+            // Quadratic falloff to take less space (supposedly more efficientt than cubic)
+            let margin = 16.0;
+            let edge_dist = min(min(f32(pos.x), f32(dims.x) - f32(pos.x)), min(f32(pos.y), f32(dims.y) - f32(pos.y)));
+
             if (edge_dist < margin) {
-                let normalized = edge_dist / margin;
-                // Cubic falloff for smooth impedance transition (prevents damping itself from causing reflections, this took a lot of trial and error)
-                let damping = pow(1.0 - normalized, 3.0) * 0.12;
-                // vel *= (1.0 - damping);
-                cell.real_y *= (1.0 - damping * 0.5); // Damp displacement to prevent accumulation at the boundary
-                cell.imag_y *= (1.0 - damping * 0.5); // Damp displacement to prevent accumulation at the boundary
+                let factor = 1.0 - (edge_dist / margin);
+                let absorption = factor * factor * 0.5;                 
+                cell.real_y *= (1.0 - absorption);
+                cell.imag_y *= (1.0 - absorption);
             }
         }
-
         // let new_y = psi_curr + vel;
         // cell.real_y = new_y.x;
         // cell.imag_y = new_y.y;
@@ -184,19 +218,26 @@ fn update(@builtin(global_invocation_id) id: vec3<u32>) {
         // }
 
         if (time_data.time < 1.0) {
-            let FREQUENCY = 700.0;
-            let RADIUS = 0.015;
-            var origin = -vec2<f32>(0.2, -0.5);
+            let FREQUENCY = 1500.0;
+            let RADIUS = 0.045;
+            var origin = -vec2<f32>(0.3, -0.5);
             if (params.scene == 1u) { // Prism
                 origin = -vec2<f32>(0.2, -0.4);
             }
-            let wave_emit = circleWave(vec2<f32>(pos) / vec2<f32>(dims) * rot(PI/2.0), origin, FREQUENCY, RADIUS, time_data.time);
+            let uv = vec2<f32>(pos) / vec2<f32>(dims);
+            let wave_emit = circleWave(uv * rot(PI/2.0), origin, FREQUENCY, RADIUS, time_data.time);
             // var wave_emit = vec2<f32>(0., 0.);
             // if (pos.x > 380u && pos.x < 420u && pos.y > 280u && pos.y < 320u) {
             //     wave_emit = vec2<f32>(1., 1.) * sin(time_data.time * FREQUENCY);
             // }
             cell.real_y = wave_emit.x;
             cell.imag_y = wave_emit.y;
+            // Stationnary wave
+            // let origin = vec2(0.5, 0.5);
+            // let dist = length((uv-vec2(0.5, 0.5)));
+            // let envelope = exp(-(dist * dist) / (2.0 * RADIUS * RADIUS)); 
+            // cell.real_y = envelope*1.0; // Uniquement du réel au début
+            // cell.imag_y = 0.0;
         }
     }
 
@@ -264,7 +305,7 @@ fn render(@builtin(global_invocation_id) id: vec3<u32>) {
             var r = cos(angle);
             var g = cos(angle + 2.0 * PI / 3.0);
             var b = cos(angle + 4.0 * PI / 3.0);
-            var c = vec3(r,g,b)*probability_density;
+            var c = vec3(r,g,b)*probability_density/100.;
 
             // var b = cell.mass / 200.;
             if (cell.mass>1.5) {
@@ -325,7 +366,7 @@ fn circleWave(point: vec2<f32>, circlePosition: vec2<f32>, frequency: f32, size:
     let dy = point.y - circlePosition.y;
     let r = dx * dx + dy * dy;
     let fade = exp(-r / 2.0 / (size * size)) / size;
-    return fade * vec2<f32>(cos(frequency * point.x), sin(frequency * point.x)) * abs(sin(time * 3.14159265358979323846));
+    return fade * vec2<f32>(cos(frequency * point.x), sin(frequency * point.x)) * sin(time * PI);
 }
 
 // zz' = (a+bi)(c+di) = ac-bd + i(ad+bc)
