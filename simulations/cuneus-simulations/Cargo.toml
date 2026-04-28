@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 cuneus = {version = "0.5.0", default-features = false}
 bytemuck = { version = "1", features = ["derive"] }
+pico-args = "0.5.0"

@@ -45,6 +45,7 @@ struct WaveSchrodingerSimulation {
     compute_shader: ComputeShader,
     params: ShaderParams,
     frame_count: u32,
+    // shader_text: String,
 }
 
 impl ShaderManager for WaveSchrodingerSimulation {
@@ -102,7 +103,18 @@ impl ShaderManager for WaveSchrodingerSimulation {
             .with_storage_buffer(StorageBufferSpec::new("cells_a", cell_buf_size))
             .with_storage_buffer(StorageBufferSpec::new("cells_b", cell_buf_size))
             .build();
-        let compute_shader = create_compute_shader(core, config, params, "wave_schrodinger");
+
+        let mut args = pico_args::Arguments::from_env();
+        let freq = args.value_from_fn("--freq", |val| val.parse::<f32>()).unwrap_or(1500.0);
+        let size = args.value_from_fn("--size", |val| val.parse::<f32>()).unwrap_or(0.025);
+        let potential = args.value_from_str("--potential").unwrap_or("step(0.1, max(-triangle((uv-vec2(0., 0.2))*8.0), 0.))".to_string());
+        dbg!(freq, &potential, size);
+        // Writes a new shader, with the arguments replaced:
+        let unprocessed_shader = std::fs::read_to_string("shaders/wave_schrodinger.wgsl").expect("Unable to find shader");
+        let shader = unprocessed_shader.replace("{INPUTTED_FREQ}", &freq.to_string()).replace("{INPUTTED_SIZE}", &size.to_string()).replace("{INPUTTED_POTENTIAL}", &potential);
+        std::fs::write("shaders/wave_schrodinger_generated.wgsl", shader).expect("Unable to write shader");
+
+        let compute_shader = create_compute_shader(core, config, params, "wave_schrodinger_generated");
         // Initialise both buffers identically
         core.queue.write_buffer(
             &compute_shader.storage_buffers[0],
@@ -120,6 +132,7 @@ impl ShaderManager for WaveSchrodingerSimulation {
             compute_shader,
             params,
             frame_count: 0,
+            // shader_text: get_shader_text()
         }
     }
 
@@ -168,6 +181,8 @@ impl ShaderManager for WaveSchrodingerSimulation {
                 if ui.button("Reset").clicked() {
                     self.params.flags |= 1;
                 }
+                // ui.text_edit_multiline(&mut self.shader_text);
+                // write_shader_text(self.shader_text);
                 ui.separator();
                 ShaderControls::render_controls_widget(ui, &mut controls_request);
             });

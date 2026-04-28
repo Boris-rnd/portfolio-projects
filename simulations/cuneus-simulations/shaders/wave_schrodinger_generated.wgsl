@@ -100,7 +100,7 @@ fn get_potential(pos: vec2<u32>) -> f32 {
         // TODO: Make quantum well work
         // TODO Double slit !
         // Gets replaced when running shader
-        return {INPUTTED_POTENTIAL};
+        return step(0.1, max(-triangle((uv-vec2(0., 0.2))*8.0), 0.));
     }
     return 0.;
 }
@@ -224,9 +224,9 @@ fn update(@builtin(global_invocation_id) id: vec3<u32>) {
         if (time_data.time < 0.5) {
             // let FREQUENCY = 0.0; // 0 for stationnary
             // let FREQUENCY = 1500.0;
-            let FREQUENCY = f32({INPUTTED_FREQ});
+            let FREQUENCY = f32(1500);
             // let RADIUS = 0.045;
-            let RADIUS = f32({INPUTTED_SIZE});
+            let RADIUS = f32(0.025);
             var origin = -vec2<f32>(0.3, -0.5);
             if (params.scene == 1u) { // Prism
                 origin = -vec2<f32>(0.2, -0.4);
