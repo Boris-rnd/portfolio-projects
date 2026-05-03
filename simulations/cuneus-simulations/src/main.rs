@@ -231,11 +231,13 @@ pub fn create_compute_shader<T: bytemuck::Pod>(core: &Core, config: ComputeConfi
 pub mod fluid;
 pub mod wave;
 pub mod wave_schrodinger;
+pub mod wave_schrodinger_game;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // main_copy::main()
     // fluid::main()
     // wave::main()
-    wave_schrodinger::main()
+    // wave_schrodinger::main()
+    wave_schrodinger_game::main()
     // let (app, event_loop) = ShaderApp::new("Particle Simulation", 800, 600);
     // app.run(event_loop, ParticleSimulation::init)
 }
