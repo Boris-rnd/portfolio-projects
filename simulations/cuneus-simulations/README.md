@@ -33,6 +33,10 @@ cargo r -- --freq 700 --size 0.015 --potential "random(sin(f32(pos.x))+cos(f32(p
 Freq and size are interpreted as numbers, but potential is code, which has access to the "uv" variable, which is the coordinate of the cell (distance from origin).
 And potential code is getting replaced raw in the shader code, so you can play with anything.
 
+You can try release mode if you are CPU-bounded... For this just change the iteration count in the code and run in release mode: `cargo run --release`
+I get ~40fps in release mode with 50 iterations whereas I get 25fps in debug
+But with 20 iterations, it's ~60fps in debug mode.
+
 TODO: Change wave form from cli
 
 ## Results

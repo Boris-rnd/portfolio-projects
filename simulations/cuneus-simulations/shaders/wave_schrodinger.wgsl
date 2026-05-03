@@ -91,6 +91,8 @@ fn get_potential(pos: vec2<u32>) -> f32 {
         // Tunnel effect demonstration !!!
         // if (uv.y > 0.1 && uv.y < 0.11) { return 0.5; }
         //TODO Localisation d'Anderson with random potential = https://fr.wikipedia.org/wiki/Localisation_d%27Anderson
+        // A random paper about Anderson localization: https://people.ohio.edu/drabold/pubs/94.pdf
+        // And also: https://hal.science/hal-04063697/ but I can't see pdf because I'm not in an institution !
         // return random(sin(f32(pos.x))+cos(f32(pos.y)*100000.1313)+time_data.time)*0.5;
         // 4. Lentille Magnétique (Prisme)
         // return step(0.1, max(-triangle((uv-vec2(0., 0.2))*8.0), 0.));

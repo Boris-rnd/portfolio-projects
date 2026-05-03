@@ -221,7 +221,8 @@ pub fn create_compute_shader<T: bytemuck::Pod>(core: &Core, config: ComputeConfi
     #[cfg(debug_assertions)]
     let compute_shader = ComputeShader::from_builder(core, &std::fs::read_to_string(&hot_reload_path).unwrap(), config);
     #[cfg(not(debug_assertions))]
-    let compute_shader = ComputeShader::from_builder(core, include_str!("../shaders/{}.wgsl", path), config);
+    let compute_shader = ComputeShader::from_builder(core, &std::fs::read_to_string(&hot_reload_path).unwrap(), config);
+    // let compute_shader = ComputeShader::from_builder(core, include_str!(hot_reload_path), config);
     compute_shader.set_custom_params(params, &core.queue);
 
     compute_shader
