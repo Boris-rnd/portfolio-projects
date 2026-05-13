@@ -91,6 +91,8 @@ fn get_potential(pos: vec2<u32>) -> f32 {
         // Tunnel effect demonstration !!!
         // if (uv.y > 0.1 && uv.y < 0.11) { return 0.5; }
         //TODO Localisation d'Anderson with random potential = https://fr.wikipedia.org/wiki/Localisation_d%27Anderson
+        // A random paper about Anderson localization: https://people.ohio.edu/drabold/pubs/94.pdf
+        // And also: https://hal.science/hal-04063697/ but I can't see pdf because I'm not in an institution !
         // return random(sin(f32(pos.x))+cos(f32(pos.y)*100000.1313)+time_data.time)*0.5;
         // 4. Lentille Magnétique (Prisme)
         // return step(0.1, max(-triangle((uv-vec2(0., 0.2))*8.0), 0.));
@@ -100,7 +102,7 @@ fn get_potential(pos: vec2<u32>) -> f32 {
         // TODO: Make quantum well work
         // TODO Double slit !
         // Gets replaced when running shader
-        return step(0.1, max(-triangle((uv-vec2(0., 0.2))*8.0), 0.));
+        return 1.0-step(0.01, abs(uv.y-0.2))*1.0;
     }
     return 0.;
 }
@@ -226,7 +228,7 @@ fn update(@builtin(global_invocation_id) id: vec3<u32>) {
             // let FREQUENCY = 1500.0;
             let FREQUENCY = f32(1500);
             // let RADIUS = 0.045;
-            let RADIUS = f32(0.025);
+            let RADIUS = f32(0.045);
             var origin = -vec2<f32>(0.3, -0.5);
             if (params.scene == 1u) { // Prism
                 origin = -vec2<f32>(0.2, -0.4);
