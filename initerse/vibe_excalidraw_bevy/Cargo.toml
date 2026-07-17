@@ -1,0 +1,28 @@
+[workspace]
+members = [
+  "crates/su_core",
+  "crates/su_grid",
+  "crates/su_render_excali",
+  "crates/su_logistics",
+  "crates/su_factories",
+  "crates/su_ui",
+]
+resolver = "3"
+
+[package]
+name = "sketched-universe"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = { version = "0.15", features = ["default_font", "tonemapping_luts"] }
+su_core = { path = "crates/su_core" }
+su_grid = { path = "crates/su_grid" }
+su_render_excali = { path = "crates/su_render_excali" }
+su_logistics = { path = "crates/su_logistics" }
+su_factories = { path = "crates/su_factories" }
+su_ui = { path = "crates/su_ui" }
+
+leafwing-input-manager = "0.15"
+rand = "0.8"
+roughr = "0.6"

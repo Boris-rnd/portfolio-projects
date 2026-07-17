@@ -1,0 +1,9 @@
+[package]
+name = "su_ui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = { version = "0.15" }
+su_core = { path = "../su_core" }
+su_grid = { path = "../su_grid" }

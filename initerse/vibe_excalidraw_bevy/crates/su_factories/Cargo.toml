@@ -1,0 +1,10 @@
+[package]
+name = "su_factories"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = { workspace = true }
+su_core = { workspace = true }
+su_grid = { workspace = true }
+su_render_excali = { workspace = true }

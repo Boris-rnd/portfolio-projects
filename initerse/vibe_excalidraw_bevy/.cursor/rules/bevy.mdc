@@ -1,0 +1,15 @@
+---
+description: Bevy 0.15 coding rules
+globs: ["**/*.rs"]
+alwaysApply: true
+---
+
+- Always use Bevy Plugins, never put logic in main.rs
+- Components are data only, Systems are functions
+- No unwrap() in systems, use if let Ok()
+- Use FixedUpdate for simulation ticks at 10hz, Update for rendering
+- Query pattern: Query<(&A, &mut B)>, iterate with for loop
+- Resources accessed via Res/ResMut, init with init_resource
+- Bevy 0.15 API: use bevy::prelude::*, no more add_system
+- Cargo check per crate: cargo check -p crate_name
+- su_core must not import rendering

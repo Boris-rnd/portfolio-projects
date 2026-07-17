@@ -1,0 +1,11 @@
+error: failed to load manifest for workspace member `/home/boris/Documents/Projets/initerse/vibe_excalidraw_bevy/crates/su_core`
+referenced by workspace at `/home/boris/Documents/Projets/initerse/vibe_excalidraw_bevy/Cargo.toml`
+
+Caused by:
+  failed to parse manifest at `/home/boris/Documents/Projets/initerse/vibe_excalidraw_bevy/crates/su_core/Cargo.toml`
+
+Caused by:
+  error inheriting `bevy` from workspace root manifest's `workspace.dependencies.bevy`
+
+Caused by:
+  `workspace.dependencies` was not defined
