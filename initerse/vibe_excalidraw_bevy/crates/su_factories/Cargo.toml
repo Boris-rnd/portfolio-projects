@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { workspace = true }
-su_core = { workspace = true }
-su_grid = { workspace = true }
-su_render_excali = { workspace = true }
+bevy = { version = "0.15", features = ["default_font", "tonemapping_luts"] }
+su_core = { path = "../su_core" }
+su_grid = { path = "../su_grid" }
+su_render_excali = { path = "../su_render_excali" }

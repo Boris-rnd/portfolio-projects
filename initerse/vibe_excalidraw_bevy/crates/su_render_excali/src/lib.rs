@@ -1,3 +1,5 @@
+#![allow(unused, dead_code)]
+
 use bevy::prelude::*;
 
 pub mod rough;

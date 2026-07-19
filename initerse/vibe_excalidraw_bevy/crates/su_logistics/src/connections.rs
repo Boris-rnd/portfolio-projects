@@ -44,7 +44,8 @@ pub struct ConnectionsPlugin;
 impl Plugin for ConnectionsPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(FixedUpdate, tick_connections)
-            .add_systems(Update, draw_connections);
+            .add_systems(Update, draw_connections)
+            ;
     }
 }
 
@@ -53,8 +54,9 @@ fn tick_connections(
     mut query: Query<&mut Connection>,
 ) {
     for mut conn in query.iter_mut() {
+        let throughput = conn.throughput;
         for p in conn.particles.iter_mut() {
-            p.t += time.delta_secs() * 0.5 * conn.throughput;
+            p.t += time.delta_secs() * 0.5 * throughput;
             if p.t > 1.0 { p.t = 0.0; } // loop for now, later deliver
         }
     }
@@ -86,10 +88,15 @@ fn draw_connections(
             gizmos.circle_2d(pos, 5.0, particle.resource.color());
         }
         // Arrow head
+        dbg!(&conn);
         let end = conn.curve.at(1.0);
+        dbg!(&end);
         let dir = (conn.curve.at(0.99) - end).normalize_or_zero();
+        dbg!(&dir);
         let left = end + dir * 15.0 + Vec2::new(-dir.y, dir.x) * 8.0;
+        dbg!(&left);
         let right = end + dir * 15.0 + Vec2::new(dir.y, -dir.x) * 8.0;
+        dbg!(&right);
         gizmos.line_2d(end, left, Color::BLACK);
         gizmos.line_2d(end, right, Color::BLACK);
     }

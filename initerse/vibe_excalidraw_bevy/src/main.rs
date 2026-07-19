@@ -1,4 +1,5 @@
-use bevy::prelude::*;
+#![allow(unused, dead_code)]
+use bevy::{prelude::*, window::WindowResolution};
 use su_core::SuCorePlugin;
 use su_grid::SuGridPlugin;
 use su_render_excali::SuRenderExcaliPlugin;
@@ -11,7 +12,7 @@ fn main() {
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Sketched Universe - Excalidraw Factorio".to_string(),
-                resolution: (1280., 720.).into(),
+                resolution: WindowResolution::new(1280.0, 720.0),
                 ..default()
             }),
             ..default()

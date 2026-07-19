@@ -55,15 +55,16 @@ fn lerp_camera(
     time: Res<Time>,
 ) {
     // Exponential smoothing
-    camera_state.current_zoom = camera_state.current_zoom.lerp(
+    camera_state.current_zoom = Lerp::lerp(
+        camera_state.current_zoom,
         camera_state.target_zoom,
         1.0 - (-10.0 * time.delta_secs()).exp()
-    );
+    ).clamp(0.05, 20.0);
     
     for mut transform in query.iter_mut() {
         transform.translation.x = camera_state.target_position.x;
         transform.translation.y = camera_state.target_position.y;
-        transform.scale = Vec3::splat(1.0 / camera_state.current_zoom);
+        transform.scale = Vec3::splat(1.0 / camera_state.current_zoom).clamp_length(0.05, 20.0);
     }
 }
 

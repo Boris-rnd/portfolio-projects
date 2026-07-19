@@ -11,7 +11,7 @@ impl Plugin for CameraPlugin {
 }
 
 pub fn setup_camera(mut commands: Commands) {
-    commands.spawn(Camera2d);
+    commands.spawn((Camera2d, Msaa::Sample4));
 }
 
 const PAN_SPEED: f32 = 500.0;

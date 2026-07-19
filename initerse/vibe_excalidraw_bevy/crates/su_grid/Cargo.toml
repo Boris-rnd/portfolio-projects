@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { workspace = true }
-su_core = { workspace = true }
+bevy = { version = "0.15", features = ["default_font", "tonemapping_luts"] }
+su_core = { path = "../su_core" }
 leafwing-input-manager = "0.15"

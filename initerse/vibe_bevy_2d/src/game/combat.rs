@@ -1,18 +1,20 @@
-use bevy::prelude::*;
-use crate::building::{Turret, BuildingAssets};
-use rand::Rng;
+use crate::*;
+use rand::RngExt;
 
 pub struct CombatPlugin;
 
 impl Plugin for CombatPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (
-            spawn_enemies_system,
-            enemy_movement_system,
-            turret_targeting_system,
-            bullet_movement_system,
-            despawn_dead_system,
-        ));
+        app.add_systems(
+            Update,
+            (
+                spawn_enemies_system,
+                enemy_movement_system,
+                turret_targeting_system,
+                bullet_movement_system,
+                despawn_dead_system,
+            ),
+        );
     }
 }
 
@@ -35,7 +37,9 @@ fn spawn_enemies_system(
     mut timer: Local<f32>,
     building_assets: Res<BuildingAssets>,
 ) {
-    if building_assets.enemy == Handle::default() { return; }
+    if building_assets.enemy == Handle::default() {
+        return;
+    }
 
     *timer -= time.delta_secs();
     if *timer <= 0.0 {
@@ -54,7 +58,10 @@ fn spawn_enemies_system(
                 ..default()
             },
             Transform::from_xyz(x, y, 2.0),
-            Enemy { health: 10.0, speed: 100.0 },
+            Enemy {
+                health: 10.0,
+                speed: 100.0,
+            },
         ));
     }
 }
@@ -76,7 +83,7 @@ fn enemy_movement_system(
 
         let direction = -current_pos.normalize_or_zero();
         transform.translation += direction.extend(0.0) * enemy.speed * time.delta_secs();
-        
+
         let angle = direction.y.atan2(direction.x);
         transform.rotation = Quat::from_rotation_z(angle);
     }
@@ -93,12 +100,15 @@ fn turret_targeting_system(
         turret.timer.tick(time.delta());
         if turret.timer.just_finished() {
             let turret_pos = turret_transform.translation().truncate();
-            
+
             // Find nearest enemy in range
-            let nearest = enemies.iter()
+            let nearest = enemies
+                .iter()
                 .filter(|(_, et)| et.translation().truncate().distance(turret_pos) < turret.range)
                 .min_by(|(_, a), (_, b)| {
-                    a.translation().truncate().distance_squared(turret_pos)
+                    a.translation()
+                        .truncate()
+                        .distance_squared(turret_pos)
                         .partial_cmp(&b.translation().truncate().distance_squared(turret_pos))
                         .unwrap()
                 });
@@ -134,7 +144,7 @@ fn bullet_movement_system(
             let target_pos = enemy_transform.translation().truncate();
             let current_pos = transform.translation.truncate();
             let direction = (target_pos - current_pos).normalize_or_zero();
-            
+
             let dist = current_pos.distance(target_pos);
             let move_amt = bullet.speed * time.delta_secs();
 
@@ -152,10 +162,7 @@ fn bullet_movement_system(
     }
 }
 
-fn despawn_dead_system(
-    mut commands: Commands,
-    enemies: Query<(Entity, &Enemy)>,
-) {
+fn despawn_dead_system(mut commands: Commands, enemies: Query<(Entity, &Enemy)>) {
     for (entity, enemy) in &enemies {
         if enemy.health <= 0.0 {
             commands.entity(entity).despawn();

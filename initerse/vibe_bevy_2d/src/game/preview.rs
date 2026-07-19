@@ -1,41 +1,61 @@
-use bevy::prelude::*;
-use crate::{
-    building::{GridPosition, Collector, Storage, Turret, GoldNode, BuildingMarker, BuildingAssets},
-    connection::{Connection, ItemMovement},
-    grid::{world_to_grid, grid_to_world, TILE_SIZE},
-    ui::SelectedBuilding,
-    GlobalInventory,
-};
+use crate::*;
 
-pub struct InteractionPlugin;
+#[derive(Resource)]
+pub struct PreviewBuilding {
+    building: Option<Building>,
+    entity: Entity,
+}
 
-impl Plugin for InteractionPlugin {
-    fn build(&self, app: &mut App) {
-        app.init_resource::<DragState>()
-           .add_systems(Update, (
-               building_placement_system,
-               connection_drag_system,
-               ghost_preview_system,
-               keyboard_interaction_system,
-           ));
+pub fn escape_preview(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    mut preview_building: ResMut<PreviewBuilding>,
+    mut commands: Commands,
+) {
+    if keyboard_input.just_pressed(KeyCode::Escape) || mouse_input.just_pressed(MouseButton::Right) {
+        preview_building.building = None;
+        commands.entity(preview_building.entity).insert(Visibility::Hidden);
     }
 }
 
-/// Tracks the state of drag and drop for connections
-#[derive(Resource, Default)]
-pub struct DragState {
-    /// The entity we started dragging from (a Collector)
-    pub connecting_from: Option<Entity>,
-    /// The last grid position processed for hold-to-place
-    pub last_placed_grid: Option<IVec2>,
+pub fn get_mouse_world_pos(
+    window: Single<&Window, With<PrimaryWindow>>,
+    camera_query: Single<(&Camera, &GlobalTransform)>,
+) -> Option<Vec2> {
+    let (camera, camera_transform) = *camera_query;
+    camera.viewport_to_world_2d(camera_transform, window.cursor_position()?).ok()
 }
 
-#[derive(Component)]
-pub struct GhostPreview;
 
-/// The live line while the user is dragging a connection
-#[derive(Component)]
-pub struct DragLine;
+
+pub fn hover_preview_building(
+    hotbar: Res<Hotbar>,
+    mut preview_building: ResMut<PreviewBuilding>,
+    mut commands: Commands,
+    window: Single<&Window, With<PrimaryWindow>>,
+    camera_query: Single<(&Camera, &GlobalTransform)>,
+) {
+    // dbg!(&hotbar);
+    if let Some(selected_slot) = hotbar.selected_slots {
+        if let Some(ref building) = hotbar.slots[selected_slot as usize].item {
+            if let Some(mouse_pos) = get_mouse_world_pos(window, camera_query) {
+                // round the mouse position to the nearest tile
+                let preview_building_position = Vec2::new(
+                    (mouse_pos.x / TILE_SIZE as f32).round() * TILE_SIZE as f32,
+                    (mouse_pos.y / TILE_SIZE as f32).round() * TILE_SIZE as f32,
+                );
+                preview_building.building = Some(building.clone());
+                commands.entity(preview_building.entity).entry::<Transform>().and_modify(move |mut transform| {
+                    transform.translation = preview_building_position.extend(10.0);
+                });
+                commands.entity(preview_building.entity).insert(Visibility::Visible);
+            }
+        }
+    }
+}
+
+
+
 
 fn keyboard_interaction_system(
     keyboard_input: Res<ButtonInput<KeyCode>>,
@@ -51,10 +71,8 @@ fn ghost_preview_system(
     windows: Query<&Window>,
     camera_q: Query<(&Camera, &GlobalTransform), With<Camera2d>>,
     selected_building: Res<SelectedBuilding>,
-    existing_buildings: Query<&GridPosition, With<BuildingMarker>>,
-    gold_nodes: Query<&GridPosition, With<GoldNode>>,
-    mut ghost_q: Query<(Entity, &mut Transform, &mut Sprite, &mut Visibility), With<GhostPreview>>,
-    building_assets: Option<Res<BuildingAssets>>,
+    mut ghost_q: Query<(Entity, &mut Transform, &mut Sprite, &mut Visibility), With<PreviewBuilding>>,
+    rendered_grid: Res<RenderedGrid>,
     global_inventory: Res<GlobalInventory>,
 ) {
     let Ok(window) = windows.single() else { return };
@@ -69,7 +87,7 @@ fn ghost_preview_system(
                 ..default()
             },
             Transform::from_translation(Vec3::new(0.0, 0.0, 3.0)),
-            GhostPreview,
+            PreviewBuilding,
             Visibility::Hidden,
         ));
         return;
@@ -115,6 +133,7 @@ fn ghost_preview_system(
             if *selected_building == SelectedBuilding::Collector && !on_gold_node {
                 can_place = false;
             }
+            can_place=true;
 
             if !can_place {
                 sprite.image = Handle::default();
@@ -287,103 +306,4 @@ fn building_placement_system(
     }
 
     drag_state.last_placed_grid = Some(grid_pos);
-}
-
-
-fn connection_drag_system(
-    mut commands: Commands,
-    mouse_input: Res<ButtonInput<MouseButton>>,
-    windows: Query<&Window>,
-    camera_q: Query<(&Camera, &GlobalTransform), With<Camera2d>>,
-    mut drag_state: ResMut<DragState>,
-    buildings: Query<(Entity, &GlobalTransform, &GridPosition, Option<&Collector>, Option<&Storage>)>,
-    mut collectors: Query<&mut Connection>,
-    mut drag_line_q: Query<(Entity, &mut Transform, &mut Sprite), With<DragLine>>,
-) {
-    let Ok(window) = windows.single() else { return };
-    let Ok((camera, camera_transform)) = camera_q.single() else { return };
-
-    let Some(cursor_pos) = window.cursor_position() else { return };
-
-    if cursor_pos.y > window.resolution.height() - 100.0 {
-        // Clean up drag line if in UI
-        for (line_e, _, _) in &drag_line_q {
-            commands.entity(line_e).despawn();
-        }
-        drag_state.connecting_from = None;
-        return;
-    }
-
-    let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) else { return };
-    let grid_pos = world_to_grid(world_pos);
-
-    // Right-click drag to start connection from a Collector
-    if mouse_input.just_pressed(MouseButton::Right) {
-        if drag_state.connecting_from.is_none() {
-            // Find an entity that HAS a Collector at this grid position
-            if let Some((entity, _, _, _, _)) = buildings.iter().find(|(_, _, p, collector, _)| p.0 == grid_pos && collector.is_some()) {
-                drag_state.connecting_from = Some(entity);
-            }
-        }
-    }
-
-    // While dragging: update the live preview line
-    if let Some(source_entity) = drag_state.connecting_from {
-        if mouse_input.pressed(MouseButton::Right) {
-            if let Ok((_, source_transform, _, _, _)) = buildings.get(source_entity) {
-                let start = source_transform.translation().truncate();
-
-                // Snap end to storage center if hovering one
-                let end = buildings
-                    .iter()
-                    .find(|(_, _, p, _, storage)| p.0 == grid_pos && storage.is_some())
-                    .map(|(_, t, _, _, _)| t.translation().truncate())
-                    .unwrap_or(world_pos);
-
-                let diff = end - start;
-                let length = diff.length();
-                let angle = diff.y.atan2(diff.x);
-                let mid = (start + end) / 2.0;
-
-                if drag_line_q.is_empty() {
-                    // Spawn drag line
-                    commands.spawn((
-                        Sprite {
-                            color: Color::srgba(0.9, 0.9, 0.3, 0.8),
-                            custom_size: Some(Vec2::new(length, 3.0)),
-                            ..default()
-                        },
-                        Transform::from_translation(mid.extend(2.5))
-                            .with_rotation(Quat::from_rotation_z(angle)),
-                        DragLine,
-                    ));
-                } else {
-                    let Ok((_, mut t, mut sp)) = drag_line_q.single_mut() else { return };
-                    sp.custom_size = Some(Vec2::new(length, 3.0));
-                    t.translation = mid.extend(2.5);
-                    t.rotation = Quat::from_rotation_z(angle);
-                }
-            }
-        } else {
-            // Released
-            // Remove the preview line
-            for (line_e, _, _) in &drag_line_q {
-                commands.entity(line_e).despawn();
-            }
-
-            // Try to make the connection
-            if let Some((target_entity, _, _, _, _)) = buildings
-                .iter()
-                .find(|(e, _, p, _, storage)| p.0 == grid_pos && storage.is_some() && *e != source_entity)
-            {
-                if let Ok(mut connection) = collectors.get_mut(source_entity) {
-                    if !connection.targets.contains(&target_entity) {
-                        connection.targets.push(target_entity);
-                    }
-                }
-            }
-
-            drag_state.connecting_from = None;
-        }
-    }
 }

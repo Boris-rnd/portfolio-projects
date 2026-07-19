@@ -14,13 +14,15 @@ struct Params {
     gravity: f32,
     particle_size: u32,
     particle_count: u32,
+    grid_count_x: u32,
+    grid_count_y: u32,
     speed: f32,
     reset: u32,
     camera_pos_x: f32,
     camera_pos_y: f32,
     camera_zoom: f32,
-    // _pad0: u32,
-    // _pad1: u32,
+    _pad0: u32,
+    _pad1: u32,
     // _pad2: u32,
 };
 @group(1) @binding(1) var<uniform> params: Params;
@@ -38,14 +40,10 @@ struct Particle {
     old_pos: vec2<f32>,
     pos: vec2<f32>,
     mass: f32,
-    disabled: u32,
+    enabled: u32,
     _pad1: u32,
     _pad2: u32,
 };
-
-struct ParticleGrid {
-    inner_mass: f32,
-}
 
 @group(3) @binding(0) var<storage, read_write> particles: array<Particle>;
 @group(3) @binding(1) var<storage, read_write> particles_grid: array<ParticleGrid>;
@@ -74,20 +72,21 @@ fn update(@builtin(global_invocation_id) id: vec3<u32>) {
     }
 
     var p = particles[i];
-    if p.disabled == 1 {return;}
-
+    
     if (params.reset > 0u || time_data.frame == 0u) {
         p.pos = vec2<f32>(rand(i * 2u), rand(i * 2u + 1u));
         p.old_pos = p.pos; // vel=0
+        p.enabled = 1;
         p.mass = 1.0;
     } else {
+        if p.enabled == 0 {return;}
         var total_acc = vec2<f32>(0.0);
 
         for (var j = 0u; j < params.particle_count; j++) {
             if (i == j) { continue; }
-            
+
             let p2 = particles[j];
-            if (p2.disabled == 1u) { continue; }
+            if (p2.enabled == 0u) { continue; }
 
             let diff = p2.pos - p.pos;
             let dst_sq = max(dot(diff, diff), 0.001);
@@ -103,7 +102,7 @@ fn update(@builtin(global_invocation_id) id: vec3<u32>) {
         }
 
         let dt = time_data.delta * params.speed;
-        
+
         let temp = p.pos;
         p.pos = 2.0 * p.pos - p.old_pos + total_acc * dt * dt;
         p.old_pos = temp;
@@ -111,34 +110,81 @@ fn update(@builtin(global_invocation_id) id: vec3<u32>) {
     particles[i] = p;
 }
 
+
+struct ParticleGrid {
+    inner_mass: f32,
+    particle_count: u32,
+    holding_particles: array<vec4<u32>, 25>,
+    pad: array<u32, 2>
+}
+fn grid_pos_to_idx(pos: vec2<u32>) -> u32 {
+    return u32(pos.x+pos.y*(params.grid_count_x));
+}
+fn grid_idx_to_grid_pos(idx: u32) -> vec2<u32> {
+    return vec2(idx%params.grid_count_x, idx/params.grid_count_x);
+}
+
+@compute @workgroup_size(64)
+fn update_grids(@builtin(global_invocation_id) id: vec3<u32>) {
+    let dims = textureDimensions(output);
+    let grid_size = vec2(f32(dims.x)/f32(params.grid_count_x), f32(dims.y)/f32(params.grid_count_y));
+
+    let i = id.x;
+    if i>=params.particle_count {return;}
+    let p = particles[i];
+    if p.enabled==0 {return;}
+    let grid_idx = grid_pos_to_idx(vec2<u32>(p.pos/(grid_size/100.)));
+    var cell = particles_grid[grid_idx];
+    if cell.particle_count >= 100 {
+        return;
+    }
+    // particles_grid[grid_idx].holding_particles[cell.particle_count] = i;
+    particles_grid[grid_idx].particle_count += 1;
+}
+
+@compute @workgroup_size(16,16)
+fn debug_grids(@builtin(global_invocation_id) id: vec3<u32>) {
+    let dims = textureDimensions(output);
+    if (id.x >= dims.x || id.y >= dims.y) {
+        return;
+    }
+    let pos_px = vec2<u32>(id.xy);
+    // textureStore(output, pos_px, vec4<f32>(0.0));
+    let grid_size = vec2(f32(dims.x)/f32(params.grid_count_x), f32(dims.y)/f32(params.grid_count_y));
+
+    let grid_pos = vec2<u32>(vec2<f32>(pos_px)/grid_size);
+    let grid_idx = grid_pos_to_idx(grid_pos);
+    let grid_ip = grid_idx_to_grid_pos(grid_idx);
+    textureStore(output, pos_px, vec4<f32>(f32(grid_ip.x)/128., f32(grid_ip.y)/128., min(f32(particles_grid[grid_idx].particle_count)/10., 0.5), 1.0));
+}
+
+@compute @workgroup_size(64)
+fn reset_grids(@builtin(global_invocation_id) id: vec3<u32>) {
+    let grid_id = id.x;
+    if grid_id>=params.grid_count_x*params.grid_count_y {return;}
+    particles_grid[grid_id].particle_count = 0;
+    particles_grid[grid_id].inner_mass = 0.;
+}
+
+
 @compute @workgroup_size(16, 16)
 fn clear_atomics(@builtin(global_invocation_id) id: vec3<u32>) {
     let dims = textureDimensions(output);
     if (id.x >= dims.x || id.y >= dims.y) {
         return;
     }
-    let idx = id.y * dims.x + id.x;
     let pos_px = vec2<u32>(id.xy);
-    if (pos_px.x < u32(dims.x) && pos_px.y < u32(dims.y)) {
-        textureStore(output, pos_px, vec4<f32>(0.0));
-    }
+    textureStore(output, pos_px, vec4<f32>(vec3(0.0), 1.));
 }
 
 @compute @workgroup_size(64)
 fn splat(@builtin(global_invocation_id) id: vec3<u32>) {
-    let particles_per_thread = params.particle_count/(64u*64u) + 1u;
-    let start_idx = id.x * particles_per_thread;
+    let i = id.x;
+    if (i >= params.particle_count) {return;}
 
-    for (var j = 0u; j < particles_per_thread; j++) {
-        let i = start_idx + j;
-        if (i >= params.particle_count) {
-            break;
-        }
-
-        let p = particles[i];
-        if p.disabled == 1 {continue;}
-        render_particle(p);
-    }
+    var p = particles[i];
+    if p.enabled == 0 {return;}
+    render_particle(p);
 }
 
 fn render_particle(p: Particle) {

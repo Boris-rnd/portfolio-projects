@@ -1,3 +1,5 @@
+#![allow(unused, dead_code)]
+
 use bevy::prelude::*;
 
 /// Pure logic, no rendering. This is what LLMs can test easily.

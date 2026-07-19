@@ -5,27 +5,36 @@ cuneus::uniform_params! {
     gravity: f32,
     particle_size: u32,
     particle_count: u32,
+    grid_count_x: u32,
+    grid_count_y: u32,
     speed: f32,
     reset: u32,
     camera_pos: [f32; 2],
     camera_zoom: f32,
+    padding: [u32;2]
 }}
 
 
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable)]
-struct Particle {
-    pos: [f32; 2],
-    vel: [f32; 2],
-    mass: f32,
-    _pad: [u32; 3],
+cuneus::uniform_params! {
+    struct Particle {
+        pos: [f32; 2],
+        vel: [f32; 2],
+        mass: f32,
+        _pad: [u32; 3],
+    }
 }
 
+pub type ParticleId = u32;
 
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable)]
-struct ParticleGrid {
-    inner_mass: f32,
+// #[repr(C)]
+// #[derive(Copy, Clone, Debug, Pod, Zeroable)]
+cuneus::uniform_params! {
+    struct ParticleGrid {
+        inner_mass: f32,
+        particle_count: u32,
+        holding_particles: [[ParticleId; 4]; 25],
+        pad: [u32; 2]
+    }
 }
 
 struct ParticleSimulation {
@@ -38,6 +47,13 @@ impl ShaderManager for ParticleSimulation {
     fn init(core: &Core) -> Self {
         let base = RenderKit::new(core);
 
+        let mut grids: [ParticleGrid; 16*16] = std::array::from_fn(|_| {ParticleGrid {
+            inner_mass: 1.0,
+            particle_count: 0,
+            holding_particles: [[u32::MAX; 4]; 25],
+            pad: [0; 2],
+        }});
+
         let particle_count = 20_000;
         let particles = vec![
             Particle {
@@ -48,7 +64,6 @@ impl ShaderManager for ParticleSimulation {
             };
             particle_count
         ];
-        let particle_grid = vec![ParticleGrid { inner_mass: 0.0 }; 100 * 100];
 
         let params = ShaderParams {
             gravity: 0.005,
@@ -58,16 +73,20 @@ impl ShaderManager for ParticleSimulation {
             reset: 1,
             camera_pos: [-1., -1.],
             camera_zoom: 0.25,
+            grid_count_x: 16,
+            grid_count_y: 16,
+            padding: [0; _],
         };
 
         let passes = vec![
-            PassDescription::new("update", &[]).with_workgroup_size([
-                particle_count.div_ceil(64) as u32,
-                1,
-                1,
-            ]), // 313 * 64 > 20,000
+            // Update logic
+            PassDescription::new("reset_grids", &[]).with_workgroup_size([grids.len() as u32/64, 1, 1]),
+            PassDescription::new("update", &[]).with_workgroup_size([particle_count.div_ceil(64) as u32,1,1,]),
+            PassDescription::new("update_grids", &["update"]).with_workgroup_size([particle_count.div_ceil(64) as u32,1,1]), // Each invocation computes it's particle count
+            // Render logic
             PassDescription::new("clear_atomics", &[]),
-            PassDescription::new("splat", &[]).with_workgroup_size([64, 1, 1]),
+            PassDescription::new("debug_grids", &["update_grids"]),
+            PassDescription::new("splat", &["update"]).with_workgroup_size([particle_count.div_ceil(64) as u32, 1, 1]),
             // PassDescription::new("render", &[]),
         ];
 
@@ -83,7 +102,7 @@ impl ShaderManager for ParticleSimulation {
             ))
             .with_storage_buffer(StorageBufferSpec::new(
                 "particles_grid",
-                (particle_grid.len() * std::mem::size_of::<ParticleGrid>()) as u64,
+                (grids.len() * std::mem::size_of::<ParticleGrid>()) as u64,
             ))
             .build();
         let compute_shader = create_compute_shader(core, config, params, "particles");
@@ -95,7 +114,7 @@ impl ShaderManager for ParticleSimulation {
         core.queue.write_buffer(
             &compute_shader.storage_buffers[1],
             0,
-            bytemuck::cast_slice(&particle_grid),
+            bytemuck::cast_slice(&grids),
         );
 
         Self {

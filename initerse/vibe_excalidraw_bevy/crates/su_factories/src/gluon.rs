@@ -29,7 +29,7 @@ pub fn produce_gluons(
     time: Res<Time>,
     mut query: Query<(&GluonGenerator, &mut Buffer)>,
 ) {
-    for (gen, mut buffer) in query.iter_mut() {
-        buffer.insert(su_core::resources::ResourceType::Gluon, gen.rate * time.delta_secs());
+    for (generator, mut buffer) in query.iter_mut() {
+        buffer.insert(su_core::resources::ResourceType::Gluon, generator.rate * time.delta_secs());
     }
 }

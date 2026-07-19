@@ -1,13 +1,12 @@
-use bevy::prelude::*;
-use crate::GlobalInventory;
-use crate::building::{Collector, Storage, Base};
+use crate::*;
 use crate::connection::Connection;
 
 pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<SelectedBuilding>()
+        app
+        // .init_resource::<SelectedBuilding>()
            .init_resource::<InspectedEntity>()
            .add_systems(Startup, setup_ui)
            .add_systems(Update, (
@@ -20,21 +19,21 @@ impl Plugin for UiPlugin {
     }
 }
 
-#[derive(Resource, Default, PartialEq, Eq, Clone, Copy, Debug)]
-pub enum SelectedBuilding {
-    #[default]
-    None,
-    Collector,
-    Storage,
-    Turret,
-    Destroy,
-}
+// #[derive(Resource, Default, PartialEq, Eq, Clone, Copy, Debug)]
+// pub enum SelectedBuilding {
+//     #[default]
+//     None,
+//     Collector,
+//     Storage,
+//     Turret,
+//     Destroy,
+// }
 
 #[derive(Resource, Default)]
 pub struct InspectedEntity(pub Option<Entity>);
 
-#[derive(Component)]
-pub struct BuildingButton(pub SelectedBuilding);
+// #[derive(Component)]
+// pub struct BuildingButton(pub SelectedBuilding);
 
 #[derive(Component)]
 pub struct GlobalStatsText;
@@ -46,80 +45,6 @@ pub struct InspectionPanel;
 pub struct InspectionText;
 
 fn setup_ui(mut commands: Commands) {
-    // ── Hotbar ──
-    commands
-        .spawn((
-            Node {
-                width: Val::Percent(100.0),
-                height: Val::Px(100.0),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                position_type: PositionType::Absolute,
-                bottom: Val::Px(10.0),
-                ..default()
-            },
-        ))
-        .with_children(|parent| {
-            for i in 1..=10u32 {
-                let building = match i {
-                    1 => SelectedBuilding::Collector,
-                    2 => SelectedBuilding::Storage,
-                    3 => SelectedBuilding::Turret,
-                    10 => SelectedBuilding::Destroy,
-                    _ => SelectedBuilding::None,
-                };
-
-                let inner_color = match building {
-                    SelectedBuilding::Collector => Color::srgb(0.8, 0.4, 0.2),
-                    SelectedBuilding::Storage   => Color::srgb(0.2, 0.4, 0.8),
-                    SelectedBuilding::Turret    => Color::srgb(0.5, 0.5, 0.9),
-                    SelectedBuilding::Destroy   => Color::srgb(0.8, 0.1, 0.1),
-                    SelectedBuilding::None      => Color::srgba(0.0, 0.0, 0.0, 0.0),
-                };
-
-                let label = if i == 10 { "0".to_string() } else { i.to_string() };
-
-                parent
-                    .spawn((
-                        Button,
-                        Node {
-                            width: Val::Px(64.0),
-                            height: Val::Px(64.0),
-                            margin: UiRect::all(Val::Px(4.0)),
-                            justify_content: JustifyContent::Center,
-                            align_items: AlignItems::Center,
-                            border: UiRect::all(Val::Px(3.0)),
-                            ..default()
-                        },
-                        BorderColor::all(Color::srgb(0.1, 0.1, 0.1)),
-                        BackgroundColor(Color::srgb(0.15, 0.15, 0.15)),
-                        BuildingButton(building),
-                    ))
-                    .with_children(|slot| {
-                        slot.spawn((
-                            Node {
-                                width: Val::Px(44.0),
-                                height: Val::Px(44.0),
-                                ..default()
-                            },
-                            BackgroundColor(inner_color),
-                        ));
-
-                        slot.spawn((
-                            Text::new(label),
-                            TextFont { font_size: 14.0, ..default() },
-                            TextColor(Color::srgb(0.7, 0.7, 0.7)),
-                            Node {
-                                position_type: PositionType::Absolute,
-                                top: Val::Px(2.0),
-                                left: Val::Px(4.0),
-                                ..default()
-                            },
-                        ));
-                    });
-            }
-        });
-
     // ── Global Stats (top-left) ──
     commands
         .spawn((
@@ -136,12 +61,12 @@ fn setup_ui(mut commands: Commands) {
         .with_children(|parent| {
             parent.spawn((
                 Text::new("Global Resources"),
-                TextFont { font_size: 20.0, ..default() },
+                TextFont { font_size: FontSize::Px(20.0), ..default() },
                 TextColor(Color::srgb(0.9, 0.9, 0.4)),
             ));
             parent.spawn((
                 Text::new("Loading..."),
-                TextFont { font_size: 16.0, ..default() },
+                TextFont { font_size: FontSize::Px(16.0), ..default() },
                 TextColor(Color::srgb(1.0, 1.0, 1.0)),
                 GlobalStatsText,
             ));
@@ -166,12 +91,12 @@ fn setup_ui(mut commands: Commands) {
         .with_children(|parent| {
             parent.spawn((
                 Text::new("Building Info"),
-                TextFont { font_size: 18.0, ..default() },
+                TextFont { font_size: FontSize::Px(18.0), ..default() },
                 TextColor(Color::srgb(0.6, 0.8, 1.0)),
             ));
             parent.spawn((
                 Text::new(""),
-                TextFont { font_size: 14.0, ..default() },
+                TextFont { font_size: FontSize::Px(14.0), ..default() },
                 TextColor(Color::srgb(0.9, 0.9, 0.9)),
                 InspectionText,
             ));
@@ -183,12 +108,12 @@ fn inspection_system(
     windows: Query<&Window>,
     camera_q: Query<(&Camera, &GlobalTransform), With<Camera2d>>,
     selected_building: Res<SelectedBuilding>,
-    buildings: Query<(Entity, &crate::building::GridPosition), With<crate::building::BuildingMarker>>,
     mut inspected: ResMut<InspectedEntity>,
     mut panel_q: Query<&mut Visibility, With<InspectionPanel>>,
     mut text_q: Query<&mut Text, With<InspectionText>>,
     collector_q: Query<(&Collector, &Connection)>,
     storage_q: Query<(&Storage, Option<&Base>)>,
+    rendered_grid: ResMut<RenderedGrid>,
 ) {
     if *selected_building != SelectedBuilding::None {
         if let Ok(mut v) = panel_q.single_mut() { *v = Visibility::Hidden; }
@@ -203,8 +128,10 @@ fn inspection_system(
         let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) else { return };
         let grid_pos = crate::grid::world_to_grid(world_pos);
 
-        if let Some((entity, _)) = buildings.iter().find(|(_, p)| p.0 == grid_pos) {
-            inspected.0 = Some(entity);
+        
+
+        if let Some((b, e)) = rendered_grid.get(&grid_pos) {
+            inspected.0 = Some(*e);
         } else {
             inspected.0 = None;
         }
@@ -284,28 +211,6 @@ fn button_visuals_system(
             Interaction::Hovered => Color::srgb(0.25, 0.25, 0.25),
             Interaction::None    => Color::srgb(0.15, 0.15, 0.15),
         });
-    }
-}
-
-fn hotbar_keyboard_system(
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut selected_building: ResMut<SelectedBuilding>,
-) {
-    let mut toggle = |target: SelectedBuilding| {
-        if *selected_building == target {
-            *selected_building = SelectedBuilding::None;
-        } else {
-            *selected_building = target;
-        }
-    };
-
-    if keyboard_input.just_pressed(KeyCode::Digit1) { toggle(SelectedBuilding::Collector); }
-    if keyboard_input.just_pressed(KeyCode::Digit2) { toggle(SelectedBuilding::Storage); }
-    if keyboard_input.just_pressed(KeyCode::Digit3) { toggle(SelectedBuilding::Turret); }
-    if keyboard_input.just_pressed(KeyCode::Digit0) { toggle(SelectedBuilding::Destroy); }
-    
-    if keyboard_input.just_pressed(KeyCode::Escape) {
-        *selected_building = SelectedBuilding::None;
     }
 }
 

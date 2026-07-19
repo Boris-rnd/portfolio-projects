@@ -4,21 +4,23 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { version = "0.18", default-features = false, features = ["2d"] }
-rand = "0.9"
+bevy = { version = "0.19.0", default-features = false, features = ["2d", "ui", "dynamic_linking"] }
+rand = "0.10.2"
 tracing = { version = "0.1", features = [
     "max_level_debug",
     "release_max_level_warn",
 ] }
-bevy-inspector-egui = "0.36"
+bevy-inspector-egui = "0.37.0"
 
 bevy_seedling = { git = "https://github.com/CorvusPrudens/bevy_seedling" }
-noiz = "*"
+noiz = "0.5.0"
 bevy_asset_loader = { git = "https://github.com/NiklasEi/bevy_asset_loader" }
 bevy_hanabi = { git = "https://github.com/djeedai/bevy_hanabi" }
+bevy_prototype_lyon = "0.17.0"
+smallvec = "1.15.2"
 
 [target.wasm32-unknown-unknown.dependencies]
-getrandom = { version = "0.3", features = ["wasm_js"] }
+getrandom = { version = "0.4.3", features = ["wasm_js"] }
 
 [features]
 default = ["dev_native"]
@@ -28,11 +30,7 @@ dev = [
     "bevy/bevy_ui_debug",
     "bevy/track_location",
 ]
-dev_native = [
-    "dev",
-    "bevy/file_watcher",
-    "bevy/embedded_watcher",
-]
+dev_native = ["dev", "bevy/file_watcher", "bevy/embedded_watcher"]
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(bevy_lint)"] }

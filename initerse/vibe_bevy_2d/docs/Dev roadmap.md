@@ -1,3 +1,14 @@
+Next Questions to Refine (if you want deeper dive)
+To make this even better:
+
+Drones: Should drone range be infinite but slower with distance (Vectorio) or limited circle that you need to chain (Factorio roboports)? Range chaining is more challenge.
+Art: Do you want pure black-white like Excalidraw.com or subtle tints? I implemented tint per resource (photon yellow, gluon orange) but still black outlines -> want to add glow/bloom
+Progression: After Artificial Star produces Heavy Atoms, how do you get to Black Hole? Could be: Too much Heavy Atoms in star -> collapses into Black Hole Forge building that outputs Hawking Radiation (your "photons" loop at higher tier).
+Effortless feel: Excalidraw has infinite undo, library, collaboration. 
+Have Ctrl+Z undo placement and Ctrl+C/V copy-paste of factory groups?
+
+
+
 This is kind of a todo list for us, devs
 
 - Have a good storyline, that will improve as the development of the game goes on
