@@ -128,7 +128,6 @@ fn clear_atomics(@builtin(global_invocation_id) id: vec3<u32>) {
 fn splat(@builtin(global_invocation_id) id: vec3<u32>) {
     let particles_per_thread = params.particle_count/(64u*64u) + 1u;
     let start_idx = id.x * particles_per_thread;
-    let dims = textureDimensions(output);
 
     for (var j = 0u; j < particles_per_thread; j++) {
         let i = start_idx + j;
@@ -138,55 +137,64 @@ fn splat(@builtin(global_invocation_id) id: vec3<u32>) {
 
         let p = particles[i];
         if p.disabled == 1 {continue;}
-        let pos_px = vec2<u32>((p.pos - vec2<f32>(params.camera_pos_x, params.camera_pos_y)) * vec2<f32>(dims) * params.camera_zoom);
-
-        if (pos_px.x < dims.x && pos_px.y < dims.y) {
-                let ps = i32(params.particle_size);
-                let half_size = i32(p.mass/1000.);
-                textureStore(output, vec2<i32>(pos_px.xy), vec4<f32>(p.mass/100., 0., 1., 1.));
-
-                for (var y = -half_size; y < half_size; y++) {
-                    for (var x = -half_size; x < half_size; x++) {
-                        let disp = vec2(x, y);
-                        let current = vec2<i32>(pos_px.xy) + disp;
-                        if (current.x >= 0i && current.y >= 0i && u32(current.x) < dims.x && u32(current.y) < dims.y) {
-                            let intensity = f32(1.0) - f32(disp.x*disp.x + disp.y*disp.y) / f32(half_size*half_size)*1.0;
-                            textureStore(output, current, vec4<f32>(intensity, intensity, intensity, 1.0));
-                        }
-                    }
-                }
-        }
+        render_particle(p);
     }
 }
 
-@compute @workgroup_size(16, 16)
-fn render(@builtin(global_invocation_id) id: vec3<u32>) {
+fn render_particle(p: Particle) {
     let dims = textureDimensions(output);
-    if (id.x >= dims.x || id.y >= dims.y) {
-        return;
-    }
-
-    let idx = id.y * dims.x + id.x;
-    let count = atomicLoad(&atomic_buffer[idx]);
-
-    // Background color
-    var col = vec4<f32>(0.00, 0.00, 0.0, 1.0);
+    let pos_px = vec2<u32>((p.pos - vec2<f32>(params.camera_pos_x, params.camera_pos_y)) * vec2<f32>(dims) * params.camera_zoom);
 
     let ps = i32(params.particle_size);
-    let half_size = ps/2;
-    if (count > 0u) {
-        let intensity = min(f32(count) * 0.4, 1.0);
-        col += vec4<f32>(1.0, 1.0, 1.0, 1.0) * intensity;
-        for (var y = -half_size; y < half_size; y++) {
-            for (var x = -half_size; x < half_size; x++) {
-                let current = vec2<i32>(id.xy) + vec2(x, y);
-                textureStore(output, current, col);
-                // let dst = id.xy-current;
-                // if dst.x < u32(dims.x) && dst.y < u32(dims.y) {
-                // }
+    // let half_size = i32(p.mass/1000.);
+    // textureStore(output, vec2<i32>(pos_px.xy), vec4<f32>(p.mass/100., 0., 1., 1.));
+
+    for (var y = -ps+1; y < ps; y++) {
+        for (var x = -ps+1; x < ps; x++) {
+            let disp = vec2(x, y);
+            let current = vec2<i32>(pos_px.xy) + disp;
+            if (current.x >= 0i && current.y >= 0i && u32(current.x) < dims.x && u32(current.y) < dims.y) {
+                let dst_sq = f32(disp.x*disp.x + disp.y*disp.y);
+                let normalized_dst = dst_sq / f32(ps*ps);
+                let intensity = vec3(f32(1.0)); //  - normalized_dst
+                // let prev_intensity = textureLoad(output, current).xyz;
+                if normalized_dst >= 0.5 {continue;}
+                let color = vec3(vec2<f32>(pos_px)/vec2<f32>(dims), f32(p.mass));
+
+                textureStore(output, current, vec4<f32>(color, 1.0));
             }
         }
     }
-
-    // textureStore(output, id.xy, col);
 }
+
+// @compute @workgroup_size(16, 16)
+// fn render(@builtin(global_invocation_id) id: vec3<u32>) {
+//     let dims = textureDimensions(output);
+//     if (id.x >= dims.x || id.y >= dims.y) {
+//         return;
+//     }
+
+//     let idx = id.y * dims.x + id.x;
+//     let count = atomicLoad(&atomic_buffer[idx]);
+
+//     // Background color
+//     var col = vec4<f32>(0.00, 0.00, 0.0, 1.0);
+
+//     let ps = i32(params.particle_size);
+//     let half_size = ps/2;
+//     if (count > 0u) {
+//         let intensity = min(f32(count) * 0.4, 1.0);
+//         col += vec4<f32>(1.0, 1.0, 1.0, 1.0) * intensity;
+//         for (var y = -half_size; y < half_size; y++) {
+//             for (var x = -half_size; x < half_size; x++) {
+//                 let current = vec2<i32>(id.xy) + vec2(x, y);
+//                 textureStore(output, current, col);
+//                 // let dst = id.xy-current;
+//                 // if dst.x < u32(dims.x) && dst.y < u32(dims.y) {
+//                 // }
+//             }
+//         }
+//     }
+
+//     // textureStore(output, id.xy, col);
+// }

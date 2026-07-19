@@ -15,6 +15,7 @@ struct Params {
     speed: f32,
     // fst bit = reset
     // snd bit = edge damping
+    // thrd bit = show accumulated height instead of velocity
     flags: u32,
     scene: u32,
     camera_pos_x: f32,
@@ -77,13 +78,36 @@ fn update(@builtin(global_invocation_id) id: vec3<u32>) {
                 let INDEX_OF_REFRACTION = 0.6; // 3.0 / 5.0
                 cell.mass = 1.0 / INDEX_OF_REFRACTION;
             }
-        } else if (params.scene == 2u || true) { // Double Slit
+        } else if (params.scene == 2u) { // Double Slit
+            // Simple double-slit: extremely high mass (almost immovable) at wall except at slits
             if (pos.y > 250 && pos.y < 270) {
                 let slit_width = 10;
                 let slit_height = 40;
                 if (((i32(pos.x) - (400-slit_height/2)) > slit_width || (i32(pos.x) - (400-slit_height/2)) < -slit_width) &&
                     ((i32(pos.x) - (400+slit_height/2)) > slit_width || (i32(pos.x) - (400+slit_height/2)) < -slit_width)) {
                     cell.mass = 1000000.0;
+                }
+            }
+        } else if (params.scene == 3u) { // Impurities: many small circles with varying refractive indices
+            // Create a field of small circular impurities. On reset we assign a different local
+            // mass (via index of refraction) for particles inside those circles.
+            let N_IMP: u32 = 1280u; // number of impurities
+            let px = f32(pos.x);
+            let py = f32(pos.y);
+            for (var ic = 0u; ic < N_IMP; ic = ic + 1u) {
+                // generate deterministic pseudo-random seed per impurity index
+                let seed = ic * 15485863u + 32452843u * time_data.frame;
+                let cx = (rand(seed + 1u)) * f32(dims.x);
+                let cy = (rand(seed + 2u)) * f32(dims.y);
+                let r = 3. + rand(seed + 3u) * 0.5; // radius in pixels: 2..20
+                let refr = 1.6 + rand(seed + 4u) * 1.4; // index range: 0.6 .. 2.0
+                let dx = px - cx;
+                let dy = py - cy;
+                if (dx * dx + dy * dy < r * r) {
+                    // set the local mass inversely proportional to index of refraction
+                    cell.mass = 1.6;
+                    // cell.mass = 1.+abs(1.0 / refr);
+                    break;
                 }
             }
         }
@@ -209,7 +233,11 @@ fn render(@builtin(global_invocation_id) id: vec3<u32>) {
                 b = 0.5;
             }
             // textureStore(output, vec2<i32>(pos_px.xy), vec4<f32>(cell.y*20., abs(cell.y) / 100., b, 1.));
-            textureStore(output, vec2<i32>(pos_px.xy), vec4<f32>(cell.accumulated_height/200., cell.y * 1., b, 1.));
+            if (params.flags & u32(4)) == 4 {
+                textureStore(output, vec2<i32>(pos_px.xy), vec4<f32>(cell.accumulated_height/200., cell.y * 1., b, 1.));
+            } else {
+                textureStore(output, vec2<i32>(pos_px.xy), vec4<f32>(0., cell.y * 1., (cell.mass-1.), 1.));
+            }
             // Added for debugging
             // if cell.y != 0. {
             //     textureStore(output, vec2<i32>(pos_px.xy), vec4<f32>(1., abs(cell.y) / 100., 1., 1.));
@@ -260,3 +288,5 @@ fn circleWave(point: vec2<f32>, circlePosition: vec2<f32>, frequency: f32, size:
     let fade = exp(-r / 2.0 / (size * size)) / size;
     return fade * cos(frequency * point.x) * abs(sin(time * 3.14159265358979323846));
 }
+
+

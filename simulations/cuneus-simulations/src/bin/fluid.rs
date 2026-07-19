@@ -1,12 +1,4 @@
-#![allow(unused, dead_code)]
-use bytemuck::{Pod, Zeroable};
-use cuneus::compute::*;
-use cuneus::prelude::*;
-use cuneus::compute::*;
-use cuneus::winit::keyboard::Key;
-use cuneus::winit::keyboard::KeyCode;
-use cuneus::{Core, RenderKit, ShaderApp, ShaderManager, UniformProvider} ;
-use crate::*;
+use cuneus_simulations::*;
 
 cuneus::uniform_params! {
     struct ShaderParams {

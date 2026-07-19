@@ -1,11 +1,4 @@
-#![allow(unused, dead_code)]
-use bytemuck::{Pod, Zeroable};
-use cuneus::compute::*;
-use cuneus::prelude::*;
-use cuneus::compute::*;
-use cuneus::winit::keyboard::Key;
-use cuneus::winit::keyboard::KeyCode;
-use cuneus::{Core, RenderKit, ShaderApp, ShaderManager, UniformProvider} ;
+use cuneus_simulations::*;
 
 cuneus::uniform_params! {
     struct ShaderParams {
@@ -166,11 +159,10 @@ impl ShaderManager for ParticleSimulation {
         match event {
             winit::event::WindowEvent::MouseWheel { delta, .. } => {
                 // Todo zoom in and out
-                dbg!(&delta);
                 self.params.camera_zoom += match delta {
                     winit::event::MouseScrollDelta::LineDelta(_, y) => *y,
                     winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
-                } as f32 * 0.1;
+                } * 0.005;
                 true
             },
             winit::event::WindowEvent::KeyboardInput { event, .. } => {
@@ -201,43 +193,12 @@ impl ShaderManager for ParticleSimulation {
 
 
 
-pub fn create_compute_shader<T: bytemuck::Pod>(core: &Core, config: ComputeConfiguration, params: T, path: &str) -> ComputeShader {
-    // Using the macro expansion to not have to recompile everytime changing the shader
-    let mut config = config;
-    let caller_file = file!();
-    let caller_dir = match caller_file.rfind('/') {
-        Some(pos) => &caller_file[..pos],
-        None => match caller_file.rfind('\\') {
-            Some(pos) => &caller_file[..pos],
-            None => "",
-        },
-    };
-    let hot_reload_path = if caller_dir.is_empty() {
-        format!("../shaders/{}.wgsl", path)
-    } else {
-        format!("{}/../shaders/{}.wgsl", caller_dir, path)
-    };
-    config.hot_reload_path = Some(std::path::PathBuf::from(hot_reload_path.clone()));
-    #[cfg(debug_assertions)]
-    let compute_shader = ComputeShader::from_builder(core, &std::fs::read_to_string(&hot_reload_path).unwrap(), config);
-    #[cfg(not(debug_assertions))]
-    let compute_shader = ComputeShader::from_builder(core, &std::fs::read_to_string(&hot_reload_path).unwrap(), config);
-    // let compute_shader = ComputeShader::from_builder(core, include_str!(hot_reload_path), config);
-    compute_shader.set_custom_params(params, &core.queue);
-
-    compute_shader
-}
-
-pub mod fluid;
-pub mod wave;
-pub mod wave_schrodinger;
-pub mod wave_schrodinger_game;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // main_copy::main()
     // fluid::main()
-    wave::main()
+    // wave::main()
     // wave_schrodinger::main()
     //wave_schrodinger_game::main()
-    // let (app, event_loop) = ShaderApp::new("Particle Simulation", 800, 600);
-    // app.run(event_loop, ParticleSimulation::init)
+    let (app, event_loop) = ShaderApp::new("Particle Simulation", 800, 600);
+    app.run(event_loop, ParticleSimulation::init)
 }

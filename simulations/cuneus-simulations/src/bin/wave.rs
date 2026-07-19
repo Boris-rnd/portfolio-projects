@@ -1,12 +1,4 @@
-#![allow(unused, dead_code)]
-use bytemuck::{Pod, Zeroable};
-use cuneus::compute::*;
-use cuneus::prelude::*;
-use cuneus::compute::*;
-use cuneus::winit::keyboard::Key;
-use cuneus::winit::keyboard::KeyCode;
-use cuneus::{Core, RenderKit, ShaderApp, ShaderManager, UniformProvider} ;
-use crate::*;
+use cuneus_simulations::*;
 
 cuneus::uniform_params! {
     struct ShaderParams {
@@ -14,6 +6,7 @@ cuneus::uniform_params! {
     speed: f32,
     // fst bit = reset
     // snd bit = edge damping
+    // thrd bit = show accumulated height instead of velocity
     flags: u32,
     scene: u32,
     camera_pos: [f32; 2],
@@ -28,43 +21,45 @@ cuneus::uniform_params! {
 
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Pod, Zeroable, Default)]
+#[derive(Copy, Clone, Debug, Pod, Zeroable)]
 struct Cell {
     // old_y is now read from the previous ping-pong buffer
-    real_y: f32,
-    imag_y: f32,
+    y: f32,
     mass: f32,
+    accumulated_height: f32,
     // _pad: u32,
     _pad: [u32; 1],
 }
 
 
 
-struct WaveSchrodingerSimulation {
+struct WaveSimulation {
     base: RenderKit,
     compute_shader: ComputeShader,
     params: ShaderParams,
     frame_count: u32,
-    // shader_text: String,
 }
 
-impl ShaderManager for WaveSchrodingerSimulation {
+impl ShaderManager for WaveSimulation {
     fn init(core: &Core) -> Self {
         let base = RenderKit::new(core);
 
         let cell_count = 800 * 600;
         let cells = vec![
             Cell {
-                ..Default::default()
+                y: 0.0,
+                mass: 1.0,
+                accumulated_height: 0.0,
+                _pad: [0; 1],
             };
             cell_count
         ];
 
         let params = ShaderParams {
             cell_count: cell_count as u32,
-            speed: 2.0,
-            flags: 0b11, // Default edge damping
-            scene: 2,
+            speed: 1.0,
+            flags: 0b1,
+            scene: 1,
             camera_pos: [-0.5, -0.5],
             camera_zoom: 1.0,
             drag: 0.1,
@@ -95,7 +90,7 @@ impl ShaderManager for WaveSchrodingerSimulation {
 
         let cell_buf_size = (cell_count * std::mem::size_of::<Cell>()) as u64;
         let config = ComputeShader::builder()
-            .with_label("Wave Schrodinger Simulation")
+            .with_label("Wave Simulation")
             .with_multi_pass(&passes)
             .with_custom_uniforms::<ShaderParams>()
             .with_mouse()
@@ -103,18 +98,7 @@ impl ShaderManager for WaveSchrodingerSimulation {
             .with_storage_buffer(StorageBufferSpec::new("cells_a", cell_buf_size))
             .with_storage_buffer(StorageBufferSpec::new("cells_b", cell_buf_size))
             .build();
-
-        let mut args = pico_args::Arguments::from_env();
-        let freq = args.value_from_fn("--freq", |val| val.parse::<f32>()).unwrap_or(1500.0);
-        let size = args.value_from_fn("--size", |val| val.parse::<f32>()).unwrap_or(0.025);
-        let potential = args.value_from_str("--potential").unwrap_or("step(0.1, max(-triangle((uv-vec2(0., 0.2))*8.0), 0.))".to_string());
-        dbg!(freq, &potential, size);
-        // Writes a new shader, with the arguments replaced:
-        let unprocessed_shader = std::fs::read_to_string("shaders/wave_schrodinger.wgsl").expect("Unable to find shader");
-        let shader = unprocessed_shader.replace("{INPUTTED_FREQ}", &freq.to_string()).replace("{INPUTTED_SIZE}", &size.to_string()).replace("{INPUTTED_POTENTIAL}", &potential);
-        std::fs::write("shaders/wave_schrodinger_generated.wgsl", shader).expect("Unable to write shader");
-
-        let compute_shader = create_compute_shader(core, config, params, "wave_schrodinger_generated");
+        let compute_shader = create_compute_shader(core, config, params, "wave");
         // Initialise both buffers identically
         core.queue.write_buffer(
             &compute_shader.storage_buffers[0],
@@ -132,7 +116,6 @@ impl ShaderManager for WaveSchrodingerSimulation {
             compute_shader,
             params,
             frame_count: 0,
-            // shader_text: get_shader_text()
         }
     }
 
@@ -162,14 +145,14 @@ impl ShaderManager for WaveSchrodingerSimulation {
         // UI
         let full_output = self.base.render_ui(core, |ctx| {
             RenderKit::apply_default_style(ctx);
-            egui::Window::new("Wave Schrodinger Simulation").show(ctx, |ui| {
+            egui::Window::new("Cell Simulation").show(ctx, |ui| {
                 ui.add(egui::Slider::new(&mut self.params.camera_zoom, 0.1..=5.0).text("Zoom").logarithmic(true).clamping(egui::SliderClamping::Never));
                 ui.add(egui::Slider::new(&mut self.params.speed, 0.0..=20.).text("Speed").logarithmic(true).clamping(egui::SliderClamping::Never));
                 ui.add(egui::Slider::new(&mut self.params.drag, 0.0..=1.0).text("Drag").logarithmic(true).clamping(egui::SliderClamping::Never));
                 ui.add(egui::Slider::new(&mut self.params.restitution, 0.0..=10.0).text("Restitution").logarithmic(true).clamping(egui::SliderClamping::Never));
                 ui.add(egui::Slider::new(&mut self.params.camera_pos[0], -1.0..=1.0).text("Camera x").clamping(egui::SliderClamping::Never));
                 ui.add(egui::Slider::new(&mut self.params.camera_pos[1], -1.0..=1.0).text("Camera y").clamping(egui::SliderClamping::Never));
-                ui.add(egui::Slider::new(&mut self.params.scene, 0..=2).text("Scene (0=Wave, 1=Prism, 2=Slit)"));
+                ui.add(egui::Slider::new(&mut self.params.scene, 0..=3).text("Scene (0=Wave, 1=Prism, 2=Slit)").clamping(egui::SliderClamping::Never));
                 let mut edge_damping = (self.params.flags & 2u32) == 2u32;
                 if ui.checkbox(&mut edge_damping, "Edge damping").changed() {
                     if edge_damping {
@@ -178,11 +161,17 @@ impl ShaderManager for WaveSchrodingerSimulation {
                         self.params.flags &= !2u32;
                     }
                 }
+                let mut show_accumulated_height = (self.params.flags & 4u32) == 4u32;
+                if ui.checkbox(&mut show_accumulated_height, "Show accumulated height").changed() {
+                    if show_accumulated_height {
+                        self.params.flags |= 4u32;
+                    } else {
+                        self.params.flags &= !4u32;
+                    }
+                }
                 if ui.button("Reset").clicked() {
                     self.params.flags |= 1;
                 }
-                // ui.text_edit_multiline(&mut self.shader_text);
-                // write_shader_text(self.shader_text);
                 ui.separator();
                 ShaderControls::render_controls_widget(ui, &mut controls_request);
             });
@@ -199,7 +188,7 @@ impl ShaderManager for WaveSchrodingerSimulation {
         let render_workgroups = [cell_count.div_ceil(64), 1, 1];
 
         // ---------- update: runs N times, ping-pong flips each iteration ----------
-        let iterations: u32 = 20;
+        let iterations: u32 = 35;
         for _ in 0..iterations {
             self.compute_shader.set_custom_params(self.params, &core.queue);
             self.compute_shader.dispatch_stage_with_workgroups(
@@ -289,6 +278,6 @@ impl ShaderManager for WaveSchrodingerSimulation {
 }
 
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let (app, event_loop) = ShaderApp::new("Wave Schrodinger Simulation", 800, 600);
-    app.run(event_loop, WaveSchrodingerSimulation::init)
+    let (app, event_loop) = ShaderApp::new("Wave Simulation", 800, 600);
+    app.run(event_loop, WaveSimulation::init)
 }
