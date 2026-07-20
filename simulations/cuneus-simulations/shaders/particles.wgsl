@@ -33,7 +33,7 @@ struct MouseUniform {
     click: u32,
 };
 @group(2) @binding(0) var<uniform> mouse: MouseUniform;
-@group(2) @binding(1) var<storage, read_write> atomic_buffer: array<atomic<u32>>;
+@group(2) @binding(1) var<storage, read_write> particles_atomic_buffer: array<atomic<u32>>;
 
 // Group 3: User Data (Particles)
 struct Particle {
@@ -60,12 +60,14 @@ fn hash(u: u32) -> u32 {
     return v;
 }
 
+// Returns a pseudo-rng inside [0;1]
 fn rand(u: u32) -> f32 {
     return f32(hash(u)) / 4294967295.0;
 }
 
 @compute @workgroup_size(64)
 fn update(@builtin(global_invocation_id) id: vec3<u32>) {
+    if params.speed==0. {return;}
     let i = id.x;
     if (i >= params.particle_count) {
         return;
@@ -103,6 +105,7 @@ fn update(@builtin(global_invocation_id) id: vec3<u32>) {
 
         let dt = time_data.delta * params.speed;
 
+        // Verlet integration
         let temp = p.pos;
         p.pos = 2.0 * p.pos - p.old_pos + total_acc * dt * dt;
         p.old_pos = temp;
@@ -124,6 +127,35 @@ fn grid_idx_to_grid_pos(idx: u32) -> vec2<u32> {
     return vec2(idx%params.grid_count_x, idx/params.grid_count_x);
 }
 
+// Returns true if operation succeeded
+fn lock_grid(grid_id: u32) -> bool {
+    if atomicLoad(&particles_atomic_buffer[grid_id])==1u {return false;}
+    atomicStore(&particles_atomic_buffer[grid_id], 1u);
+    return true;
+}
+const MAX_RETRIES_BLOCKING:u32=500;
+// Returns true if operation succeeded
+fn lock_grid_blocking(grid_id: u32) -> bool {
+    var i = MAX_RETRIES_BLOCKING;
+    while i>0 {
+        if lock_grid(grid_id) == true {return true;}
+        // Wait a bit to not waste cycle power
+        var delay = 100u;
+        while delay > 0u {
+            delay--;
+        }
+        i--;
+    }
+    return false;
+}
+
+// Returns true if operation succeeded
+fn unlock_grid(grid_id: u32) -> bool {
+    if atomicLoad(&particles_atomic_buffer[grid_id])==0u {return false;}
+    atomicStore(&particles_atomic_buffer[grid_id], 0u);
+    return true;
+}
+
 @compute @workgroup_size(64)
 fn update_grids(@builtin(global_invocation_id) id: vec3<u32>) {
     let dims = textureDimensions(output);
@@ -133,13 +165,15 @@ fn update_grids(@builtin(global_invocation_id) id: vec3<u32>) {
     if i>=params.particle_count {return;}
     let p = particles[i];
     if p.enabled==0 {return;}
-    let grid_idx = grid_pos_to_idx(vec2<u32>(p.pos/(grid_size/100.)));
+    let grid_idx = grid_pos_to_idx(vec2<u32>(p.pos/(grid_size/800.)));
+    lock_grid_blocking(grid_idx);
     var cell = particles_grid[grid_idx];
     if cell.particle_count >= 100 {
         return;
     }
     // particles_grid[grid_idx].holding_particles[cell.particle_count] = i;
     particles_grid[grid_idx].particle_count += 1;
+    unlock_grid(grid_idx);
 }
 
 @compute @workgroup_size(16,16)
@@ -155,7 +189,7 @@ fn debug_grids(@builtin(global_invocation_id) id: vec3<u32>) {
     let grid_pos = vec2<u32>(vec2<f32>(pos_px)/grid_size);
     let grid_idx = grid_pos_to_idx(grid_pos);
     let grid_ip = grid_idx_to_grid_pos(grid_idx);
-    textureStore(output, pos_px, vec4<f32>(f32(grid_ip.x)/128., f32(grid_ip.y)/128., min(f32(particles_grid[grid_idx].particle_count)/10., 0.5), 1.0));
+    textureStore(output, pos_px, vec4<f32>(f32(grid_ip.x)/128., f32(grid_ip.y)/128., min(f32(particles_grid[grid_idx].particle_count)/100., 0.5), 1.0));
 }
 
 @compute @workgroup_size(64)
@@ -164,6 +198,7 @@ fn reset_grids(@builtin(global_invocation_id) id: vec3<u32>) {
     if grid_id>=params.grid_count_x*params.grid_count_y {return;}
     particles_grid[grid_id].particle_count = 0;
     particles_grid[grid_id].inner_mass = 0.;
+    unlock_grid(grid_id);
 }
 
 

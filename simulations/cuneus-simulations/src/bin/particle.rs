@@ -69,7 +69,7 @@ impl ShaderManager for ParticleSimulation {
             gravity: 0.005,
             particle_size: 1,
             particle_count: particle_count as u32,
-            speed: 0.00,
+            speed: 0.0005,
             reset: 1,
             camera_pos: [-1., -1.],
             camera_zoom: 0.25,
@@ -116,7 +116,7 @@ impl ShaderManager for ParticleSimulation {
             0,
             bytemuck::cast_slice(&grids),
         );
-
+        // core.queue.write_buffer(&compute_shader.atomic_buffer_raw.unwrap(), 0, data);
         Self {
             base,
             compute_shader,
