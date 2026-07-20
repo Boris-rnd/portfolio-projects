@@ -16,8 +16,8 @@ cuneus::uniform_params! {
 
 cuneus::uniform_params! {
     struct Particle {
-        old_pos: [f64; 2],
-        pos: [f64; 2],
+        old_pos: [f32; 2],
+        pos: [f32; 2],
         mass: f32,
         _pad: [u32; 3],
     }
@@ -43,9 +43,9 @@ impl ShaderManager for ParticleSimulation {
             gravity: 9.81,
             particle_size: 1,
             particle_count: particle_count as u32,
-            speed: 0.01,
+            speed: 0.1,
             reset: 1,
-            camera_pos: [-0.55, -0.55],
+            camera_pos: [-0.45, -0.45],
             camera_zoom: 0.45,
             // padding: [0; _],
         };
@@ -68,6 +68,7 @@ impl ShaderManager for ParticleSimulation {
                 "particles",
                 (particle_count * std::mem::size_of::<Particle>()) as u64,
             ))
+            .with_atomic_buffer(1)
             .build();
         let compute_shader = create_compute_shader(core, config, params, "particle-basin");
         core.queue.write_buffer(
