@@ -7,21 +7,16 @@
 use std::{cell::OnceCell, ops::RangeInclusive};
 
 pub use bevy::prelude::*;
-use bevy::render::{extract_resource::ExtractResourcePlugin, render_asset::RenderAssets, storage::GpuShaderStorageBuffer};
+use bevy::render::{extract_resource::ExtractResourcePlugin, render_asset::RenderAssets};
 pub use bevy::{
     asset::RenderAssetUsages,
     color::palettes::css::WHITE,
-    pbr::{NotShadowCaster, NotShadowReceiver},
     prelude::*,
     render::{
         batching::NoAutomaticBatching,
         render_resource::AsBindGroup,
-        render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages, ShaderType, ShaderRef},
-        storage::ShaderStorageBuffer,
-        view::NoFrustumCulling,
-        
+        render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages, ShaderType},        
     },
-    sprite::{AlphaMode2d, Material2d, Material2dPlugin},
 };
 
 pub mod build;
@@ -36,7 +31,7 @@ pub use material::*;
 
 fn main() {
     // let world = gen_world();
-    let world = load_world("engine/assets/world/sponza.vox").unwrap();
+    let world = load_world("assets/world/sponza.vox").unwrap();
     let root_max_depth = world.root_max_depth();
     let mut app = App::new();
     app
@@ -48,19 +43,16 @@ fn main() {
             ..Default::default()
         }),
         // Material2dPlugin::<CustomMaterial>::default(),
-        Material2dPlugin::<PassthroughMaterial>::default(),
+        // Material2dPlugin::<PassthroughMaterial>::default(),
         ExtractResourcePlugin::<ReadbackBuffer>::default(),
         ExtractResourcePlugin::<BeamReadbackBuffer>::default(),
         ExtractResourcePlugin::<AccumulatedTexture>::default(),
         ExtractResourcePlugin::<ComputeAtlas>::default(),
         ExtractResourcePlugin::<FragCamera>::default(),
         // bevy::render::diagnostic::RenderDiagnosticsPlugin,  
-        bevy_app_compute::prelude::AppComputePlugin,
-        // bevy_app_compute::prelude::AppComputeWorkerPlugin::<SimpleComputeWorker>::default()
         compute::GpuReadbackPlugin,
         compute::BeamGpuReadbackPlugin,
         bevy::diagnostic::FrameTimeDiagnosticsPlugin::default(),
-        iyes_perf_ui::PerfUiPlugin,
     ))
     // .add_systems(Startup, (_setup, compute::setup))
     .add_systems(Startup, (_setup.after(compute::setup), compute::setup))
@@ -78,7 +70,7 @@ pub struct AccumulatedTexture((Handle<ShaderStorageBuffer>, Handle<ShaderStorage
 fn _setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    window_query: Query<&Window, With<bevy::window::PrimaryWindow>>,
+    window_query: Single<&Window, With<PrimaryWindow>>,
     mut materials: ResMut<Assets<PassthroughMaterial>>,
     mut buffers: ResMut<Assets<bevy::render::storage::ShaderStorageBuffer>>,
     mut imgs: ResMut<Assets<Image>>,
@@ -87,22 +79,20 @@ fn _setup(
     camera: Res<FragCamera>,
     accumulated_tex: Res<AccumulatedTexture>,
 ) {
-    commands.spawn(iyes_perf_ui::prelude::PerfUiDefaultEntries::default());
-
     let center = vec3(-10., 10., -10.);
 
-    let image_dimensions = window_query.single().unwrap().resolution.size();
-    commands.spawn((
-        Mesh2d(meshes.add(Rectangle::default())),
-        MeshMaterial2d(materials.add(PassthroughMaterial {
-            camera: camera.clone(),
-            accumulated_tex: accumulated_tex.0.0.clone(),
-            // accumulated_tex2: accumulated_tex.0.1.clone(),
-        })),
-        Transform::default().with_scale(image_dimensions.extend(0.0)),
-    ));
+    let image_dimensions = window_query.resolution;
+    // commands.spawn((
+    //     Mesh2d(meshes.add(Rectangle::default())),
+    //     MeshMaterial2d(materials.add(PassthroughMaterial {
+    //         camera: camera.clone(),
+    //         accumulated_tex: accumulated_tex.0.0.clone(),
+    //         // accumulated_tex2: accumulated_tex.0.1.clone(),
+    //     })),
+    //     Transform::default().with_scale(image_dimensions.extend(0.0)),
+    // ));
 
-    commands.spawn((Camera2d::default()));
+    // commands.spawn(Camera2d);
 }
 
 fn update(

@@ -1,3 +1,4 @@
+# Old script to add missing features to wgsl, now done in build.rs at root of project  
 # Simple utility to add some wesl features to wgsl
 # I want to add include! in wgsl, and I can't make wesl work nicely (crashes even though I have hot reloading + not pretty errors)
 

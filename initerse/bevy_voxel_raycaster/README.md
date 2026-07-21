@@ -4,14 +4,15 @@ This is a very simple voxel engine WIP built in Rust + Bevy only for educational
 I used a bit of AI to do the job but I think it's trash
 Currently uses a Sparse voxel 64-tree with raycasting
 To run: cargo r
-To update shaders (auto-reload and watch for file changes):
+To update shaders (auto-reload and watch for file changes, needs the `watchdog` python module):
 ```sh
-python assets/shaders/compile.py assets/shaders/raytrace.wgsl
+cd engine/assets/shaders
+python compile.py raytrace.wgsl
 ```
 
 Then you can just 
 ```sh
-clear && cargo r
+cargo r
 ```
 
 valgrind --tool=callgrind --callgrind-out-file=callgrind.out --collect-jumps=yes --simulate-cache=yes

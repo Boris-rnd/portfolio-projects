@@ -8,8 +8,8 @@ fn div_euclid(a: i32, b: i32) -> i32 {
     let q = a / b;
     let r = a % b;
     return q - select(0, 1, (r < 0) && (b > 0)) + select(0, 1, (r > 0) && (b < 0));
-
-}fn div_euclid_f32(a: f32, b: f32) -> f32 {
+}
+fn div_euclid_f32(a: f32, b: f32) -> f32 {
     let q = floor(a / b);
     return select(q - 1.0, q, a >= 0.0);
 
