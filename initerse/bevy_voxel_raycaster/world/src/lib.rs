@@ -7,11 +7,11 @@
 #![allow(ambiguous_glob_reexports)]
 use std::{cell::OnceCell, ops::RangeInclusive};
 
-pub use bevy::prelude::*;
+use bevy::prelude::*;
 use bevy::render::{
     extract_resource::ExtractResourcePlugin, render_asset::RenderAssets,
 };
-pub use bevy::{
+use bevy::{
     asset::RenderAssetUsages,
     color::palettes::css::WHITE,
     prelude::*,

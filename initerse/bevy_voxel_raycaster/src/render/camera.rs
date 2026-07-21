@@ -1,3 +1,4 @@
+use crate::*;
 // use bevy::{input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel}, prelude::*};
 
 // pub fn camera_movement(
@@ -283,11 +284,11 @@
 // //     }
 // // }
 
-use bevy::render::extract_resource::ExtractResource;
+use bevy::render::{extract_resource::ExtractResource};
 
 use super::*;
 // #[repr(C)]
-#[derive(ShaderType, Reflect, Debug, Clone, Resource, Default, ExtractResource, Asset, PartialEq)]
+#[derive(Reflect, Debug, Clone, Resource, Default, ExtractResource, Asset, PartialEq, ShaderType)]
 pub struct FragCamera {
     pub center: Vec3,
     pub direction: Vec3,

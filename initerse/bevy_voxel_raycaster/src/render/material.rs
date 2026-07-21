@@ -1,20 +1,22 @@
-use super::*;
+use bevy::{render::storage::ShaderBuffer, sprite_render::Material2d};
+
+use crate::*;
 
 // #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
 // pub struct CustomMaterial {
 //     // #[storage(2, read_only)]
-//     // pub spheres: Handle<bevy::render::storage::ShaderStorageBuffer>,
+//     // pub spheres: Handle<bevy::render::storage::ShaderBuffer>,
 //     // #[storage(3, read_only)]
-//     // pub boxes: Handle<bevy::render::storage::ShaderStorageBuffer>,
+//     // pub boxes: Handle<bevy::render::storage::ShaderBuffer>,
 //     // #[storage(6, read_only)]
-//     // pub voxels: Handle<bevy::render::storage::ShaderStorageBuffer>,
+//     // pub voxels: Handle<bevy::render::storage::ShaderBuffer>,
     
 //     #[uniform(0)]
 //     pub camera: FragCamera,
 //     #[storage(1, read_only)]
-//     pub voxel_chunks: Handle<bevy::render::storage::ShaderStorageBuffer>,
+//     pub voxel_chunks: Handle<bevy::render::storage::ShaderBuffer>,
 //     #[storage(2, read_only)]
-//     pub map_data: Handle<bevy::render::storage::ShaderStorageBuffer>,
+//     pub map_data: Handle<bevy::render::storage::ShaderBuffer>,
 //     #[texture(3, dimension = "2d_array")]
 //     #[sampler(4)]
 //     pub atlas: Handle<Image>,
@@ -43,17 +45,17 @@ use super::*;
 //         center: Vec3,
 //         game_world: Res<GameWorld>,
 //         mut imgs: &mut ResMut<Assets<Image>>,
-//         mut buffers: &mut ResMut<Assets<bevy::render::storage::ShaderStorageBuffer>>,
+//         mut buffers: &mut ResMut<Assets<bevy::render::storage::ShaderBuffer>>,
 //     ) -> Self {
 //         Self {
 //             camera: FragCamera::new(center, vec3(0., 0., -1.)-center, 90., game_world.root_max_depth(), uvec2(image_dimensions.x as _, image_dimensions.y as _)),
 //             atlas: get_atlas_handle(&mut imgs).unwrap(),
 
-//             // spheres: buffers.add(ShaderStorageBuffer::from(game_world.spheres)),
-//             // boxes: buffers.add(ShaderStorageBuffer::from(game_world.boxes)),
-//             // voxels: buffers.add(ShaderStorageBuffer::from(game_world.voxels)),
-//             voxel_chunks: buffers.add(ShaderStorageBuffer::from(game_world.voxel_chunks.clone())),
-//             map_data: buffers.add(ShaderStorageBuffer::from(game_world.block_data.clone())),
+//             // spheres: buffers.add(ShaderBuffer::from(game_world.spheres)),
+//             // boxes: buffers.add(ShaderBuffer::from(game_world.boxes)),
+//             // voxels: buffers.add(ShaderBuffer::from(game_world.voxels)),
+//             voxel_chunks: buffers.add(ShaderBuffer::from(game_world.voxel_chunks.clone())),
+//             map_data: buffers.add(ShaderBuffer::from(game_world.block_data.clone())),
 //             accumulated_img: imgs.add({
 //                 let mut image = Image::new_fill(
 //                     Extent3d {
@@ -79,7 +81,7 @@ pub fn get_raw_atlas() -> Result<(Vec<u8>, UVec3)> {
     let mut imgs_raw = Vec::new();
     let additionnal_paths: Vec<&'static str> = vec![];
     let target_size = 32; // Define target size for width and height
-    for entry in std::fs::read_dir("engine/assets/textures").expect("Failed to read assets/images directory")
+    for entry in std::fs::read_dir("assets/textures").expect("Failed to read assets/images directory")
         .filter(|path| path.is_ok())
         .map(|path| path.unwrap().path())
         .chain(additionnal_paths.into_iter().map(|p| p.into()))
@@ -137,15 +139,16 @@ pub fn get_atlas_handle(mut imgs: &mut ResMut<Assets<Image>>) -> Result<Handle<I
 
 
 
-#[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
+#[derive(Asset, TypePath, Debug, Clone, AsBindGroup)]
 pub struct PassthroughMaterial {
     #[uniform(0)]
     pub camera: FragCamera,
     #[storage(1, read_only)]
-    pub accumulated_tex: Handle<ShaderStorageBuffer>,
+    pub accumulated_tex: Handle<ShaderBuffer>,
     // #[storage(2, read_only)]
-    // pub accumulated_tex2: Handle<ShaderStorageBuffer>,
+    // pub accumulated_tex2: Handle<ShaderBuffer>,
 }
+
 
 impl Material2d for PassthroughMaterial {
     fn fragment_shader() -> ShaderRef {

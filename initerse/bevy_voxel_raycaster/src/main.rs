@@ -15,29 +15,20 @@ pub use bevy::{
     render::{
         batching::NoAutomaticBatching,
         render_resource::AsBindGroup,
-        render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages, ShaderType},        
+        render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages, ShaderType},
     },
 };
 
 pub mod build;
-pub mod camera;
-pub use camera::*;
+pub mod render;
+pub use render::*;
 use world::parser::load_world;
 pub use world::*;
 pub mod compute;
 pub use compute::*;
-pub mod material;
-pub use material::*;
 
 fn main() {
-    // let world = gen_world();
-    let world = load_world("assets/world/sponza.vox").unwrap();
-    let root_max_depth = world.root_max_depth();
-    let mut app = App::new();
-    app
-    .insert_resource(world)
-    .insert_resource(FragCamera::new(vec3(0.,10., 0.), vec3(0., 10., -1.), 90., root_max_depth, uvec2(800, 600)))
-    .add_plugins((
+    App::new().add_plugins((
         DefaultPlugins.set(AssetPlugin {
             watch_for_changes_override: Some(true),
             ..Default::default()
@@ -49,51 +40,28 @@ fn main() {
         ExtractResourcePlugin::<AccumulatedTexture>::default(),
         ExtractResourcePlugin::<ComputeAtlas>::default(),
         ExtractResourcePlugin::<FragCamera>::default(),
-        // bevy::render::diagnostic::RenderDiagnosticsPlugin,  
+        // bevy::render::diagnostic::RenderDiagnosticsPlugin,
         compute::GpuReadbackPlugin,
         compute::BeamGpuReadbackPlugin,
         bevy::diagnostic::FrameTimeDiagnosticsPlugin::default(),
     ))
-    // .add_systems(Startup, (_setup, compute::setup))
-    .add_systems(Startup, (_setup.after(compute::setup), compute::setup))
+    .add_systems(PreStartup, (setup))
+    .add_systems(Startup, (_setup, compute::setup_compute).chain())
     .add_systems(Update, update)
     // .add_systems(Update, compute::test)
     // .add_systems(bevy::render::Render, compute::queue_compute_pass)
-    ;
-    app.run();
+    .run();
 }
 static mut WORLD_PTR: OnceCell<GameWorld> = OnceCell::new();
 
-#[derive(Resource, bevy::render::extract_resource::ExtractResource, Clone)]
-pub struct AccumulatedTexture((Handle<ShaderStorageBuffer>, Handle<ShaderStorageBuffer>));
-
-fn _setup(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    window_query: Single<&Window, With<PrimaryWindow>>,
-    mut materials: ResMut<Assets<PassthroughMaterial>>,
-    mut buffers: ResMut<Assets<bevy::render::storage::ShaderStorageBuffer>>,
-    mut imgs: ResMut<Assets<Image>>,
-    asset_server: Res<AssetServer>,
-    game_world: Res<GameWorld>,
-    camera: Res<FragCamera>,
-    accumulated_tex: Res<AccumulatedTexture>,
-) {
-    let center = vec3(-10., 10., -10.);
-
-    let image_dimensions = window_query.resolution;
-    // commands.spawn((
-    //     Mesh2d(meshes.add(Rectangle::default())),
-    //     MeshMaterial2d(materials.add(PassthroughMaterial {
-    //         camera: camera.clone(),
-    //         accumulated_tex: accumulated_tex.0.0.clone(),
-    //         // accumulated_tex2: accumulated_tex.0.1.clone(),
-    //     })),
-    //     Transform::default().with_scale(image_dimensions.extend(0.0)),
-    // ));
-
-    // commands.spawn(Camera2d);
+fn setup(mut commands: Commands) {
+    // let world = gen_world();
+    let world = load_world("assets/world/sponza.vox").unwrap();
+    commands.insert_resource(world);
+    let root_max_depth = world.root_max_depth();
+    commands.insert_resource(FragCamera::new(vec3(0.,10., 0.), vec3(0., 10., -1.), 90., root_max_depth, uvec2(800, 600)))
 }
+
 
 fn update(
     // mut cam: Query<&Transform, With<Camera>>,
@@ -103,7 +71,7 @@ fn update(
     time: Res<Time>,
     kb_input: Res<ButtonInput<KeyCode>>,
     mb_input: Res<ButtonInput<MouseButton>>,
-    mut evr_motion: EventReader<bevy::input::mouse::MouseMotion>,
+    mut evr_motion: MessageReader<bevy::input::mouse::MouseMotion>,
     window_query: Query<&Window, With<bevy::window::PrimaryWindow>>,
     mut frag_camera: ResMut<FragCamera>,
     // mut my_buffers: ResMut<ReadbackBuffer>,
@@ -111,7 +79,7 @@ fn update(
     // mut buffers: ResMut<RenderAssets<GpuShaderStorageBuffer>>,
     mut accumulated_tex: Res<AccumulatedTexture>,
 ) {
-    
+
     // let mut cam = cam.single_mut().unwrap();
     let mut camera = frag_camera;
 
@@ -177,8 +145,8 @@ fn update(
     camera.center += move_delta;
 
     let (mat, mut mat_trans) = mat.single_mut().unwrap();
-    let mat = mats.get_mut(&mat.0).unwrap();
-    
+    let mut mat = mats.get_mut(&mat.0).unwrap();
+
     let win_size = window_query.single().unwrap().resolution.size();
     mat_trans.scale = win_size.extend(0.0);
 
@@ -203,7 +171,7 @@ fn update(
         mat.camera = camera.clone();
     }
 
-    
+
     // dbg!(&buf.data, buf.buffer_description.size);
     // buf.slice(..).map_async(bevy::render::render_resource::MapMode::Write, |a| {
     //     a.unwrap();

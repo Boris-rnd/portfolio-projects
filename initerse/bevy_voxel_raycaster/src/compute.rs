@@ -1,10 +1,16 @@
 use super::*;
 use bevy::{
-    prelude::*, render::{
-        Render, RenderApp, RenderSystems, extract_resource::{ExtractResource, ExtractResourcePlugin}, render_asset::RenderAssets, render_resource::{
+    prelude::*,
+    render::{
+        Render, RenderApp, RenderStartup, RenderSystems,
+        extract_resource::{ExtractResource, ExtractResourcePlugin},
+        render_asset::RenderAssets,
+        render_resource::{
             binding_types::{storage_buffer, storage_buffer_read_only, uniform_buffer},
             *,
-        }, renderer::{RenderContext, RenderDevice, RenderQueue}, texture::GpuImage,
+        },
+        renderer::{RenderContext, RenderDevice, RenderQueue},
+        texture::GpuImage,
     },
 };
 
@@ -15,7 +21,7 @@ pub struct BeamCameraUniform(UniformBuffer<FragCamera>);
 
 #[derive(Resource, ExtractResource, Clone)]
 pub struct ReadbackBuffer {
-    pub buffers: Vec<Handle<Buffer>>,
+    pub buffers: Vec<Buffer>,
 }
 
 #[derive(Resource, ExtractResource, Clone)]
@@ -23,20 +29,27 @@ pub struct ComputeAtlas(Handle<Image>);
 
 pub struct GpuReadbackPlugin;
 impl Plugin for GpuReadbackPlugin {
-    fn build(&self, _app: &mut App) {}
+    fn build(&self, app: &mut App) {
+        let render_app = app.sub_app_mut(RenderApp);
+        render_app
+            // Pipeline setup used to live in `FromWorld`/`finish()` because `RenderDevice`
+            // wasn't available until after `build()`. In 0.19 this is a normal system that
+            // runs once in the new `RenderStartup` schedule instead.
+            .add_systems(RenderStartup, init_compute_pipeline)
+            .add_systems(
+                Render,
+                (
+                    (prepare_bind_group)
+                        .in_set(RenderSystems::PrepareBindGroups)
+                        // We don't need to recreate the bind group every frame
+                        .run_if(not(resource_exists::<GpuBufferBindGroup>)),
+                    resize_cameras.after(prepare_bind_group),
+                ),
+            );
+    }
 
     fn finish(&self, app: &mut App) {
         let render_app = app.sub_app_mut(RenderApp);
-        render_app.init_resource::<ComputePipeline>().add_systems(
-            Render,
-            (
-                (prepare_bind_group)
-                    .in_set(RenderSystems::PrepareBindGroups)
-                    // We don't need to recreate the bind group every frame
-                    .run_if(not(resource_exists::<GpuBufferBindGroup>)),
-                resize_cameras.after(prepare_bind_group),
-            ),
-        );
         // Add the compute node as a top level node to the render graph
         // This means it will only execute once per frame
         render_app
@@ -158,14 +171,14 @@ fn beam_prepare_bind_group(
 
 #[derive(Resource)]
 pub struct GpuBufferBindGroup(pub BindGroup);
-pub fn setup(
+pub fn setup_compute(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
-    window_query: Query<&Window, With<bevy::window::PrimaryWindow>>,
+    window_query: Single<&Window, With<bevy::window::PrimaryWindow>>,
     game_world: Res<GameWorld>,
     camera: Res<FragCamera>,
 ) {
-    let _win_size = window_query.single().resolution.size();
+    let _win_size = window_query.resolution.size();
 
     let (data, size) = get_raw_atlas().unwrap();
     let mut image = Image::new(
@@ -204,52 +217,56 @@ pub struct ComputePipeline {
     pipeline: CachedComputePipelineId,
 }
 
-impl FromWorld for ComputePipeline {
-    fn from_world(world: &mut World) -> Self {
-        let render_device = world.resource::<RenderDevice>();
-        let layout = render_device.create_bind_group_layout(
-            Some("Bind group layout compute"),
-            &BindGroupLayoutEntries::sequential(
-                ShaderStages::COMPUTE,
-                (
-                    storage_buffer::<Vec<u32>>(false),
-                    uniform_buffer::<FragCamera>(false),
-                    storage_buffer_read_only::<Vec<f32>>(false),
-                    binding_types::texture_storage_2d_array(
-                        TextureFormat::Rgba8Unorm,
-                        StorageTextureAccess::ReadOnly,
-                    ),
-                    storage_buffer_read_only::<Vec<VoxelChunk>>(false),
-                    storage_buffer_read_only::<Vec<MapDataPacked>>(false),
-                    storage_buffer_read_only::<Vec<MapDataPacked>>(false),
-                    storage_buffer_read_only::<Vec<MapDataPacked>>(false),
-                    storage_buffer_read_only::<Vec<MapDataPacked>>(false),
+// This used to be `impl FromWorld for ComputePipeline`, called from `Plugin::finish()`.
+// In 0.19, pipeline resources are set up via a plain system run once in `RenderStartup`.
+fn init_compute_pipeline(
+    mut commands: Commands,
+    render_device: Res<RenderDevice>,
+    asset_server: Res<AssetServer>,
+    pipeline_cache: Res<PipelineCache>,
+) {
+    let layout = render_device.create_bind_group_layout(
+        Some("Bind group layout compute"),
+        &BindGroupLayoutEntries::sequential(
+            ShaderStages::COMPUTE,
+            (
+                storage_buffer::<Vec<u32>>(false),
+                uniform_buffer::<FragCamera>(false),
+                storage_buffer_read_only::<Vec<f32>>(false),
+                binding_types::texture_storage_2d_array(
+                    TextureFormat::Rgba8Unorm,
+                    StorageTextureAccess::ReadOnly,
                 ),
+                storage_buffer_read_only::<Vec<VoxelChunk>>(false),
+                storage_buffer_read_only::<Vec<MapDataPacked>>(false),
+                storage_buffer_read_only::<Vec<MapDataPacked>>(false),
+                storage_buffer_read_only::<Vec<MapDataPacked>>(false),
+                storage_buffer_read_only::<Vec<MapDataPacked>>(false),
             ),
-        );
-        let shader = world.load_asset("shaders/raytrace-compiled.wgsl");
-        let pipeline_cache = world.resource::<PipelineCache>();
-        let pipeline = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
-            label: Some("GPU readback compute shader".into()),
-            layout: vec![layout.clone()],
-            push_constant_ranges: Vec::new(),
-            shader: shader.clone(),
-            shader_defs: vec![ShaderDef::new("_CHUNK_SIZE", CHUNK_SIZE as u32)],
-            entry_point: "main".into(),
-            zero_initialize_workgroup_memory: false,
-        });
-        ComputePipeline { layout, pipeline }
-    }
+        ),
+    );
+    let shader = asset_server.load("shaders/raytrace-compiled.wgsl");
+    let pipeline = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
+        label: Some("GPU readback compute shader".into()),
+        layout: vec![layout.clone()],
+        push_constant_ranges: Vec::new(),
+        shader,
+        shader_defs: vec![ShaderDef::new("_CHUNK_SIZE", CHUNK_SIZE as u32)],
+        entry_point: "main".into(),
+        zero_initialize_workgroup_memory: false,
+        
+    });
+    commands.insert_resource(ComputePipeline { layout, pipeline });
 }
 
 /// Label to identify the node in the render graph
-#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
 pub struct ComputeNodeLabel;
 
 /// The node that will execute the compute shader
 #[derive(Default)]
 struct ComputeNode {}
-impl Node for ComputeNode {
+impl render_graph::Node for ComputeNode {
     fn run(
         &self,
         _graph: &mut render_graph::RenderGraphContext,
@@ -293,22 +310,24 @@ pub struct BeamReadbackBuffer {
 
 pub struct BeamGpuReadbackPlugin;
 impl Plugin for BeamGpuReadbackPlugin {
-    fn build(&self, _app: &mut App) {}
-
-    fn finish(&self, app: &mut App) {
+    fn build(&self, app: &mut App) {
         let render_app = app.sub_app_mut(RenderApp);
         render_app
-            .init_resource::<BeamComputePipeline>()
+            .add_systems(RenderStartup, init_beam_compute_pipeline)
             .add_systems(
                 Render,
                 (
                     (beam_prepare_bind_group)
-                        .in_set(RenderSet::PrepareBindGroups)
+                        .in_set(RenderSystems::PrepareBindGroups)
                         // We don't need to recreate the bind group every frame
                         .run_if(not(resource_exists::<BeamGpuBufferBindGroup>)),
                     resize_cameras.after(prepare_bind_group),
                 ),
             );
+    }
+
+    fn finish(&self, app: &mut App) {
+        let render_app = app.sub_app_mut(RenderApp);
         // Add the compute node as a top level node to the render graph
         // This means it will only execute once per frame
         render_app
@@ -327,50 +346,52 @@ pub struct BeamComputePipeline {
     pipeline: CachedComputePipelineId,
 }
 
-impl FromWorld for BeamComputePipeline {
-    fn from_world(world: &mut World) -> Self {
-        let render_device = world.resource::<RenderDevice>();
-        let layout = render_device.create_bind_group_layout(
-            Some("Beam Bind group layout compute"),
-            &BindGroupLayoutEntries::sequential(
-                ShaderStages::COMPUTE,
-                (
-                    storage_buffer::<Vec<u32>>(false),
-                    uniform_buffer::<FragCamera>(false),
-                    storage_buffer_read_only::<Vec<VoxelChunk>>(false),
-                    storage_buffer_read_only::<Vec<MapDataPacked>>(false),
-                    storage_buffer_read_only::<Vec<MapDataPacked>>(false),
-                    storage_buffer_read_only::<Vec<MapDataPacked>>(false),
-                    storage_buffer_read_only::<Vec<MapDataPacked>>(false),
-                ),
+// Same conversion as `ComputePipeline`: `FromWorld` -> `RenderStartup` system.
+fn init_beam_compute_pipeline(
+    mut commands: Commands,
+    render_device: Res<RenderDevice>,
+    asset_server: Res<AssetServer>,
+    pipeline_cache: Res<PipelineCache>,
+) {
+    let layout = render_device.create_bind_group_layout(
+        Some("Beam Bind group layout compute"),
+        &BindGroupLayoutEntries::sequential(
+            ShaderStages::COMPUTE,
+            (
+                storage_buffer::<Vec<u32>>(false),
+                uniform_buffer::<FragCamera>(false),
+                storage_buffer_read_only::<Vec<VoxelChunk>>(false),
+                storage_buffer_read_only::<Vec<MapDataPacked>>(false),
+                storage_buffer_read_only::<Vec<MapDataPacked>>(false),
+                storage_buffer_read_only::<Vec<MapDataPacked>>(false),
+                storage_buffer_read_only::<Vec<MapDataPacked>>(false),
             ),
-        );
-        let shader = world.load_asset("shaders/beam-compiled.wgsl");
-        let pipeline_cache = world.resource::<PipelineCache>();
-        let pipeline = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
-            label: Some("Beam optimizer".into()),
-            layout: vec![layout.clone()],
-            push_constant_ranges: vec![PushConstantRange {
-                stages: ShaderStages::COMPUTE,
-                range: 0..std::mem::size_of::<u32>() as u32,
-            }],
-            shader: shader.clone(),
-            shader_defs: vec![ShaderDef::new("_CHUNK_SIZE", CHUNK_SIZE as u32)],
-            entry_point: "main".into(),
-            zero_initialize_workgroup_memory: false,
-        });
-        Self { layout, pipeline }
-    }
+        ),
+    );
+    let shader = asset_server.load("shaders/beam-compiled.wgsl");
+    let pipeline = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
+        label: Some("Beam optimizer".into()),
+        layout: vec![layout.clone()],
+        push_constant_ranges: vec![PushConstantRange {
+            stages: ShaderStages::COMPUTE,
+            range: 0..std::mem::size_of::<u32>() as u32,
+        }],
+        shader,
+        shader_defs: vec![ShaderDef::new("_CHUNK_SIZE", CHUNK_SIZE as u32)],
+        entry_point: "main".into(),
+        zero_initialize_workgroup_memory: false,
+    });
+    commands.insert_resource(BeamComputePipeline { layout, pipeline });
 }
 
 /// Label to identify the node in the render graph
-#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
 pub struct BeamComputeNodeLabel;
 
 /// The node that will execute the compute shader
 #[derive(Default)]
 struct BeamComputeNode {}
-impl Node for BeamComputeNode {
+impl render_graph::Node for BeamComputeNode {
     fn run(
         &self,
         _graph: &mut render_graph::RenderGraphContext,
