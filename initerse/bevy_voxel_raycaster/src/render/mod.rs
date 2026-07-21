@@ -10,7 +10,7 @@ pub use bevy::render::*;
 pub use bevy::shader::*;
 
 #[derive(Resource, ExtractResource, Clone)]
-pub struct AccumulatedTexture((Handle<ShaderBuffer>, Handle<ShaderBuffer>));
+pub struct AccumulatedTexture(pub Handle<ShaderBuffer>, pub Handle<ShaderBuffer>);
 
 
 fn _setup(

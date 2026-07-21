@@ -1,18 +1,25 @@
-use super::*;
-use bevy::{
-    prelude::*,
-    render::{
+use crate::*;
+
+
+
+
+
+use bevy::render::{
         Render, RenderApp, RenderStartup, RenderSystems,
         extract_resource::{ExtractResource, ExtractResourcePlugin},
         render_asset::RenderAssets,
+
+    render_graph::{RenderGraph, RenderLabel, RenderSubApp, Node, RenderGraphContext, NodeRunError},
         render_resource::{
             binding_types::{storage_buffer, storage_buffer_read_only, uniform_buffer},
             *,
         },
         renderer::{RenderContext, RenderDevice, RenderQueue},
         texture::GpuImage,
-    },
+
 };
+use bevy::prelude::*;
+use bevy::render::render_graph;
 
 #[derive(Resource)]
 pub struct CameraUniform(UniformBuffer<FragCamera>);
@@ -52,8 +59,13 @@ impl Plugin for GpuReadbackPlugin {
         let render_app = app.sub_app_mut(RenderApp);
         // Add the compute node as a top level node to the render graph
         // This means it will only execute once per frame
-        render_app
-            .world_mut()
+
+
+
+
+
+
+        render_app.world_mut()
             .resource_mut::<RenderGraph>()
             .add_node(ComputeNodeLabel, ComputeNode::default());
     }
@@ -202,10 +214,10 @@ pub fn setup_compute(
     commands.insert_resource(ReadbackBuffer {
         buffers: my_buffers,
     });
-    commands.insert_resource(AccumulatedTexture((
+    commands.insert_resource(AccumulatedTexture(
         buffers.add(Buffer::from(vec![0u32; (1920 * 1080) as usize])),
         buffers.add(Buffer::from(vec![0u32; (1920 * 1080) as usize])),
-    )));
+    ));
 
     commands.insert_resource(BeamReadbackBuffer {
         max_depth_buffer: buffers.add(Buffer::from(vec![0.0f32; (1920 * 1080) / 4 as usize])),
@@ -249,21 +261,20 @@ fn init_compute_pipeline(
     let pipeline = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
         label: Some("GPU readback compute shader".into()),
         layout: vec![layout.clone()],
-        push_constant_ranges: Vec::new(),
         shader,
         shader_defs: vec![ShaderDef::new("_CHUNK_SIZE", CHUNK_SIZE as u32)],
-        entry_point: "main".into(),
+        entry_point: Some("main".into()),
         zero_initialize_workgroup_memory: false,
-        
     });
     commands.insert_resource(ComputePipeline { layout, pipeline });
 }
 
-/// Label to identify the node in the render graph
-#[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
+
+
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct ComputeNodeLabel;
 
-/// The node that will execute the compute shader
+
 #[derive(Default)]
 struct ComputeNode {}
 impl render_graph::Node for ComputeNode {
@@ -328,8 +339,8 @@ impl Plugin for BeamGpuReadbackPlugin {
 
     fn finish(&self, app: &mut App) {
         let render_app = app.sub_app_mut(RenderApp);
-        // Add the compute node as a top level node to the render graph
-        // This means it will only execute once per frame
+
+
         render_app
             .world_mut()
             .resource_mut::<RenderGraph>()
@@ -346,7 +357,7 @@ pub struct BeamComputePipeline {
     pipeline: CachedComputePipelineId,
 }
 
-// Same conversion as `ComputePipeline`: `FromWorld` -> `RenderStartup` system.
+
 fn init_beam_compute_pipeline(
     mut commands: Commands,
     render_device: Res<RenderDevice>,
@@ -378,17 +389,19 @@ fn init_beam_compute_pipeline(
         }],
         shader,
         shader_defs: vec![ShaderDef::new("_CHUNK_SIZE", CHUNK_SIZE as u32)],
-        entry_point: "main".into(),
+
+        entry_point: Some("main".into()),
         zero_initialize_workgroup_memory: false,
     });
     commands.insert_resource(BeamComputePipeline { layout, pipeline });
 }
 
-/// Label to identify the node in the render graph
-#[derive(Debug, Hash, PartialEq, Eq, Clone, RenderLabel)]
+
+
+#[derive(Debug, Hash, PartialEq, Eq, Clone)]
 pub struct BeamComputeNodeLabel;
 
-/// The node that will execute the compute shader
+
 #[derive(Default)]
 struct BeamComputeNode {}
 impl render_graph::Node for BeamComputeNode {
@@ -408,7 +421,7 @@ impl render_graph::Node for BeamComputeNode {
         let camera = world.resource::<FragCamera>();
 
         if let Some(init_pipeline) = pipeline_cache.get_compute_pipeline(pipeline.pipeline) {
-            // Two passes: i=1 (1/4 resolution), i=0 (1/2 resolution)
+
             for i in (0..=1u32).rev() {
                 let mut pass =
                     render_context
@@ -430,3 +443,4 @@ impl render_graph::Node for BeamComputeNode {
         Ok(())
     }
 }
+
