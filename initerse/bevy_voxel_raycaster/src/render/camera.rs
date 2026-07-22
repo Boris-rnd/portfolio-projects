@@ -284,7 +284,7 @@ use crate::*;
 // //     }
 // // }
 
-use bevy::render::{extract_resource::ExtractResource};
+use bevy::{material::labels::ShaderLabel, render::extract_resource::ExtractResource};
 
 use super::*;
 // #[repr(C)]

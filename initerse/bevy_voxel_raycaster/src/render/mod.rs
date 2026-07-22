@@ -13,7 +13,7 @@ pub use bevy::shader::*;
 pub struct AccumulatedTexture(pub Handle<ShaderBuffer>, pub Handle<ShaderBuffer>);
 
 
-fn _setup(
+pub fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     window_query: Single<&Window, With<bevy::window::PrimaryWindow>>,

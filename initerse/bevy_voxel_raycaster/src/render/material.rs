@@ -1,4 +1,4 @@
-use bevy::{render::storage::ShaderBuffer, sprite_render::Material2d};
+use bevy::{render::{render_resource::encase::UniformBuffer, storage::ShaderBuffer}, sprite_render::Material2d};
 
 use crate::*;
 
@@ -140,10 +140,10 @@ pub fn get_atlas_handle(mut imgs: &mut ResMut<Assets<Image>>) -> Result<Handle<I
 
 
 #[derive(Asset, TypePath, Debug, Clone, AsBindGroup)]
+#[uniform(0)]
+#[storage(1, read_only)]
 pub struct PassthroughMaterial {
-    #[uniform(0)]
     pub camera: FragCamera,
-    #[storage(1, read_only)]
     pub accumulated_tex: Handle<ShaderBuffer>,
     // #[storage(2, read_only)]
     // pub accumulated_tex2: Handle<ShaderBuffer>,

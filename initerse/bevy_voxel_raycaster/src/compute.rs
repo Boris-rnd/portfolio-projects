@@ -1,26 +1,11 @@
 use crate::*;
+use bevy::render::extract_resource::ExtractResource;
+use bevy::render::render_resource::binding_types::{storage_buffer, storage_buffer_read_only, uniform_buffer};
+use bevy::render::texture::GpuImage;
+use bevy::render::{*, render_resource::*, render_asset::*, storage::*, renderer::*};
+use bevy::shader::*;
 
-
-
-
-
-use bevy::render::{
-        Render, RenderApp, RenderStartup, RenderSystems,
-        extract_resource::{ExtractResource, ExtractResourcePlugin},
-        render_asset::RenderAssets,
-
-    render_graph::{RenderGraph, RenderLabel, RenderSubApp, Node, RenderGraphContext, NodeRunError},
-        render_resource::{
-            binding_types::{storage_buffer, storage_buffer_read_only, uniform_buffer},
-            *,
-        },
-        renderer::{RenderContext, RenderDevice, RenderQueue},
-        texture::GpuImage,
-
-};
-use bevy::prelude::*;
-use bevy::render::render_graph;
-
+use std::borrow::Cow;
 #[derive(Resource)]
 pub struct CameraUniform(UniformBuffer<FragCamera>);
 #[derive(Resource)]
@@ -28,7 +13,7 @@ pub struct BeamCameraUniform(UniformBuffer<FragCamera>);
 
 #[derive(Resource, ExtractResource, Clone)]
 pub struct ReadbackBuffer {
-    pub buffers: Vec<Buffer>,
+    pub buffers: Vec<Handle<ShaderBuffer>>,
 }
 
 #[derive(Resource, ExtractResource, Clone)]
@@ -49,25 +34,27 @@ impl Plugin for GpuReadbackPlugin {
                     (prepare_bind_group)
                         .in_set(RenderSystems::PrepareBindGroups)
                         // We don't need to recreate the bind group every frame
-                        .run_if(not(resource_exists::<GpuBufferBindGroup>)),
+                        .run_if(not(resource_exists::<GpuShaderBufferBindGroup>)),
                     resize_cameras.after(prepare_bind_group),
                 ),
-            );
+            )
+            // .add_systems(
+            //     Render,
+            //     run_compute_node.in_set(RenderSystems::Queue),
+            // )
+        ;
     }
 
     fn finish(&self, app: &mut App) {
         let render_app = app.sub_app_mut(RenderApp);
         // Add the compute node as a top level node to the render graph
         // This means it will only execute once per frame
-
-
-
-
-
-
-        render_app.world_mut()
-            .resource_mut::<RenderGraph>()
-            .add_node(ComputeNodeLabel, ComputeNode::default());
+        render_app
+            .add_systems(
+                Core3d,
+                run_compute_node.in_set(Core3dSystems::MainPass),
+            )
+;
     }
 }
 
@@ -93,7 +80,7 @@ fn prepare_bind_group(
     atlas: Res<ComputeAtlas>,
     image: Res<AccumulatedTexture>,
     max_depth_buffer: Res<BeamReadbackBuffer>,
-    buffers: Res<RenderAssets<GpuBuffer>>,
+    buffers: Res<RenderAssets<GpuShaderBuffer>>,
     camera: Res<FragCamera>,
     images: Res<RenderAssets<GpuImage>>,
     queue: Res<RenderQueue>,
@@ -104,7 +91,7 @@ fn prepare_bind_group(
     let mut entries: Vec<(usize, BindingResource<'_>)> = vec![
         (
             0,
-            buffers.get(&image.0.0).unwrap().buffer.as_entire_binding(),
+            buffers.get(&image.0).unwrap().buffer.as_entire_binding(),
         ),
         (1, cam_buf.binding().unwrap()),
         (
@@ -134,7 +121,7 @@ fn prepare_bind_group(
             .collect::<Vec<_>>(),
     );
     commands.insert_resource(CameraUniform(cam_buf));
-    commands.insert_resource(GpuBufferBindGroup(bind_group));
+    commands.insert_resource(GpuShaderBufferBindGroup(bind_group));
 }
 
 fn beam_prepare_bind_group(
@@ -143,7 +130,7 @@ fn beam_prepare_bind_group(
     render_device: Res<RenderDevice>,
     world_buffers: Res<ReadbackBuffer>,
     my_buffers: Res<BeamReadbackBuffer>,
-    buffers: Res<RenderAssets<GpuBuffer>>,
+    buffers: Res<RenderAssets<GpuShaderBuffer>>,
     camera: Res<FragCamera>,
     queue: Res<RenderQueue>,
 ) {
@@ -182,10 +169,11 @@ fn beam_prepare_bind_group(
 }
 
 #[derive(Resource)]
-pub struct GpuBufferBindGroup(pub BindGroup);
+pub struct GpuShaderBufferBindGroup(pub BindGroup);
 pub fn setup_compute(
     mut commands: Commands,
     mut images: ResMut<Assets<Image>>,
+    mut storage_buffers: ResMut<Assets<ShaderBuffer>>,
     window_query: Single<&Window, With<bevy::window::PrimaryWindow>>,
     game_world: Res<GameWorld>,
     camera: Res<FragCamera>,
@@ -209,24 +197,22 @@ pub fn setup_compute(
 
     commands.insert_resource(ComputeAtlas(images.add(image)));
 
-    // Assuming game_world and other buffers are handled differently or via another resource.
-    // ...
     commands.insert_resource(ReadbackBuffer {
-        buffers: my_buffers,
+        buffers: vec![], // my_buffers
     });
     commands.insert_resource(AccumulatedTexture(
-        buffers.add(Buffer::from(vec![0u32; (1920 * 1080) as usize])),
-        buffers.add(Buffer::from(vec![0u32; (1920 * 1080) as usize])),
+        storage_buffers.add(ShaderBuffer::from(vec![0u32; (1920 * 1080) as usize])),
+        storage_buffers.add(ShaderBuffer::from(vec![0u32; (1920 * 1080) as usize])),
     ));
 
     commands.insert_resource(BeamReadbackBuffer {
-        max_depth_buffer: buffers.add(Buffer::from(vec![0.0f32; (1920 * 1080) / 4 as usize])),
+        max_depth_buffer: storage_buffers.add(ShaderBuffer::from(vec![0.0f32; (1920 * 1080) / 4 as usize])),
     });
 }
 #[derive(Resource)]
 pub struct ComputePipeline {
-    layout: BindGroupLayout,
-    pipeline: CachedComputePipelineId,
+    pub layout: BindGroupLayout,
+    pub pipeline: CachedComputePipelineId,
 }
 
 // This used to be `impl FromWorld for ComputePipeline`, called from `Plugin::finish()`.
@@ -237,8 +223,8 @@ fn init_compute_pipeline(
     asset_server: Res<AssetServer>,
     pipeline_cache: Res<PipelineCache>,
 ) {
-    let layout = render_device.create_bind_group_layout(
-        Some("Bind group layout compute"),
+    let layout = BindGroupLayoutDescriptor::new(
+        "Bind group layout compute",
         &BindGroupLayoutEntries::sequential(
             ShaderStages::COMPUTE,
             (
@@ -261,62 +247,55 @@ fn init_compute_pipeline(
     let pipeline = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
         label: Some("GPU readback compute shader".into()),
         layout: vec![layout.clone()],
-        shader,
-        shader_defs: vec![ShaderDef::new("_CHUNK_SIZE", CHUNK_SIZE as u32)],
+        shader_defs: vec![ShaderDefVal::UInt("_CHUNK_SIZE".into(), CHUNK_SIZE as u32)],
         entry_point: Some("main".into()),
         zero_initialize_workgroup_memory: false,
+        immediate_size: todo!(),
+        shader,
     });
     commands.insert_resource(ComputePipeline { layout, pipeline });
 }
 
-
-
-#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+/// Label to identify the node in the render graph
+#[derive(Debug, Hash, PartialEq, Eq, Clone)] // RenderLabel
 pub struct ComputeNodeLabel;
 
-
-#[derive(Default)]
-struct ComputeNode {}
-impl render_graph::Node for ComputeNode {
-    fn run(
-        &self,
-        _graph: &mut render_graph::RenderGraphContext,
-        render_context: &mut RenderContext,
-        world: &World,
-    ) -> Result<(), render_graph::NodeRunError> {
-        if world.get_resource::<FragCamera>().is_none() {
-            info!("Couldn't get frag camera, skipping compute pass.");
-            return Ok(());
-        }
-        let pipeline_cache = world.resource::<PipelineCache>();
-        let pipeline = world.resource::<ComputePipeline>();
-        let bind_group = world.resource::<GpuBufferBindGroup>();
-        let camera = world.resource::<FragCamera>();
-
-        if let Some(init_pipeline) = pipeline_cache.get_compute_pipeline(pipeline.pipeline) {
-            let mut pass =
-                render_context
-                    .command_encoder()
-                    .begin_compute_pass(&ComputePassDescriptor {
-                        label: Some("GPU readback compute pass"),
-                        ..default()
-                    });
-
-            pass.set_bind_group(0, &bind_group.0, &[]);
-            pass.set_pipeline(init_pipeline);
-            pass.dispatch_workgroups(
-                camera.img_dims.x.div_ceil(8),
-                camera.img_dims.y.div_ceil(8),
-                1,
-            );
-        }
-        Ok(())
+/// The node that will execute the compute shader
+fn run_compute_node(
+    render_context: &mut RenderContext,
+    world: &World,
+) {
+    if world.get_resource::<FragCamera>().is_none() {
+        info!("Couldn't get frag camera, skipping compute pass.");
+        // return Ok(());
     }
+    let pipeline_cache = world.resource::<PipelineCache>();
+    let pipeline = world.resource::<ComputePipeline>();
+    let bind_group = world.resource::<GpuShaderBufferBindGroup>();
+    let camera = world.resource::<FragCamera>();
+    if let Some(init_pipeline) = pipeline_cache.get_compute_pipeline(pipeline.pipeline) {
+        let mut pass =
+            render_context
+                .command_encoder()
+                .begin_compute_pass(&ComputePassDescriptor {
+                    label: Some("GPU readback compute pass"),
+                    ..default()
+                });
+
+        pass.set_bind_group(0, &bind_group.0, &[]);
+        pass.set_pipeline(init_pipeline);
+        pass.dispatch_workgroups(
+            camera.img_dims.x.div_ceil(8),
+            camera.img_dims.y.div_ceil(8),
+            1,
+        );
+    }
+    // Ok(())
 }
 
 #[derive(Resource, ExtractResource, Clone)]
 pub struct BeamReadbackBuffer {
-    pub max_depth_buffer: Handle<Buffer>,
+    pub max_depth_buffer: Handle<ShaderBuffer>,
 }
 
 pub struct BeamGpuReadbackPlugin;
@@ -339,12 +318,13 @@ impl Plugin for BeamGpuReadbackPlugin {
 
     fn finish(&self, app: &mut App) {
         let render_app = app.sub_app_mut(RenderApp);
-
-
-        render_app
-            .world_mut()
-            .resource_mut::<RenderGraph>()
-            .add_node(BeamComputeNodeLabel, BeamComputeNode::default());
+        // Add the compute node as a top level node to the render graph
+        // This means it will only execute once per frame
+        todo!()
+        // render_app
+        //     .world_mut()
+        //     .resource_mut::<RenderGraph>()
+        //     .add_node(BeamComputeNodeLabel, BeamComputeNode::default());
     }
 }
 
@@ -357,15 +337,15 @@ pub struct BeamComputePipeline {
     pipeline: CachedComputePipelineId,
 }
 
-
+// Same conversion as `ComputePipeline`: `FromWorld` -> `RenderStartup` system.
 fn init_beam_compute_pipeline(
     mut commands: Commands,
-    render_device: Res<RenderDevice>,
+    render_device: RenderResource<RenderDevice>,
     asset_server: Res<AssetServer>,
     pipeline_cache: Res<PipelineCache>,
 ) {
-    let layout = render_device.create_bind_group_layout(
-        Some("Beam Bind group layout compute"),
+    let layout = BindGroupLayoutDescriptor::new(
+        "Beam Bind group layout compute",
         &BindGroupLayoutEntries::sequential(
             ShaderStages::COMPUTE,
             (
@@ -382,65 +362,58 @@ fn init_beam_compute_pipeline(
     let shader = asset_server.load("shaders/beam-compiled.wgsl");
     let pipeline = pipeline_cache.queue_compute_pipeline(ComputePipelineDescriptor {
         label: Some("Beam optimizer".into()),
-        layout: vec![layout.clone()],
-        push_constant_ranges: vec![PushConstantRange {
-            stages: ShaderStages::COMPUTE,
-            range: 0..std::mem::size_of::<u32>() as u32,
-        }],
+        layout: vec![],
+        // push_constant_ranges: vec![PushConstantRange {
+        //     stages: ShaderStages::COMPUTE,
+        //     range: 0..std::mem::size_of::<u32>() as u32,
+        // }],
         shader,
-        shader_defs: vec![ShaderDef::new("_CHUNK_SIZE", CHUNK_SIZE as u32)],
-
+        shader_defs: vec![ShaderDefVal::UInt("_CHUNK_SIZE".into(), CHUNK_SIZE as u32)],
         entry_point: Some("main".into()),
         zero_initialize_workgroup_memory: false,
+        immediate_size: 0,
     });
+    let layout = render_device.create_bind_group_layout();
     commands.insert_resource(BeamComputePipeline { layout, pipeline });
 }
 
-
-
-#[derive(Debug, Hash, PartialEq, Eq, Clone)]
+/// Label to identify the node in the render graph
+#[derive(Debug, Hash, PartialEq, Eq, Clone)] // RenderLabel
 pub struct BeamComputeNodeLabel;
 
-
-#[derive(Default)]
-struct BeamComputeNode {}
-impl render_graph::Node for BeamComputeNode {
-    fn run(
-        &self,
-        _graph: &mut render_graph::RenderGraphContext,
-        render_context: &mut RenderContext,
-        world: &World,
-    ) -> Result<(), render_graph::NodeRunError> {
-        if world.get_resource::<FragCamera>().is_none() {
-            info!("Couldn't get frag camera, skipping compute pass.");
-            return Ok(());
-        }
-        let pipeline_cache = world.resource::<PipelineCache>();
-        let pipeline = world.resource::<BeamComputePipeline>();
-        let bind_group = world.resource::<BeamGpuBufferBindGroup>();
-        let camera = world.resource::<FragCamera>();
-
-        if let Some(init_pipeline) = pipeline_cache.get_compute_pipeline(pipeline.pipeline) {
-
-            for i in (0..=1u32).rev() {
-                let mut pass =
-                    render_context
-                        .command_encoder()
-                        .begin_compute_pass(&ComputePassDescriptor {
-                            label: Some("Beam optimizer"),
-                            ..default()
-                        });
-
-                pass.set_bind_group(0, &bind_group.0, &[]);
-                pass.set_pipeline(init_pipeline);
-                pass.set_push_constants(0, &i.to_le_bytes());
-                let scale = 2u32 << i;
-                let wg_x = (camera.img_dims.x / scale + 7) / 8;
-                let wg_y = (camera.img_dims.y / scale + 7) / 8;
-                pass.dispatch_workgroups(wg_x, wg_y, 1);
-            }
-        }
-        Ok(())
+/// The node that will execute the compute shader
+fn run_beam_compute(
+    _graph: &mut RenderContext,
+    render_context: &mut RenderContext,
+    world: &World,
+) {
+    if world.get_resource::<FragCamera>().is_none() {
+        info!("Couldn't get frag camera, skipping compute pass.");
+        // return Ok(());
     }
-}
+    let pipeline_cache = world.resource::<PipelineCache>();
+    let pipeline = world.resource::<BeamComputePipeline>();
+    let bind_group = world.resource::<BeamGpuBufferBindGroup>();
+    let camera = world.resource::<FragCamera>();
+    if let Some(init_pipeline) = pipeline_cache.get_compute_pipeline(pipeline.pipeline) {
+        // Two passes: i=1 (1/4 resolution), i=0 (1/2 resolution)
+        for i in (0..=1u32).rev() {
+            let mut pass =
+                render_context
+                    .command_encoder()
+                    .begin_compute_pass(&ComputePassDescriptor {
+                        label: Some("Beam optimizer"),
+                        ..default()
+                    });
 
+            pass.set_bind_group(0, &bind_group.0, &[]);
+            pass.set_pipeline(init_pipeline);
+            // pass.set_push_constants(0, &i.to_le_bytes());
+            let scale = 2u32 << i;
+            let wg_x = (camera.img_dims.x / scale + 7) / 8;
+            let wg_y = (camera.img_dims.y / scale + 7) / 8;
+            pass.dispatch_workgroups(wg_x, wg_y, 1);
+        }
+    }
+    // Ok(())
+}

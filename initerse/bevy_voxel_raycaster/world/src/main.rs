@@ -10,6 +10,7 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 fn main() {
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
+
     // let start = std::time::Instant::now();
     // let prev_world = gen_world_size(1024);
 

@@ -45,8 +45,8 @@ fn main() {
         compute::BeamGpuReadbackPlugin,
         bevy::diagnostic::FrameTimeDiagnosticsPlugin::default(),
     ))
-    .add_systems(PreStartup, (setup))
-    .add_systems(Startup, (_setup, compute::setup_compute).chain())
+    .add_systems(PreStartup, (setup_world))
+    .add_systems(Startup, (render::setup, compute::setup_compute).chain())
     .add_systems(Update, update)
     // .add_systems(Update, compute::test)
     // .add_systems(bevy::render::Render, compute::queue_compute_pass)
@@ -54,11 +54,11 @@ fn main() {
 }
 static mut WORLD_PTR: OnceCell<GameWorld> = OnceCell::new();
 
-fn setup(mut commands: Commands) {
+fn setup_world(mut commands: Commands) {
     // let world = gen_world();
     let world = load_world("assets/world/sponza.vox").unwrap();
-    commands.insert_resource(world);
     let root_max_depth = world.root_max_depth();
+    commands.insert_resource(world);
     commands.insert_resource(FragCamera::new(vec3(0.,10., 0.), vec3(0., 10., -1.), 90., root_max_depth, uvec2(800, 600)))
 }
 
