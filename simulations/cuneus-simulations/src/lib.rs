@@ -1,3 +1,4 @@
+pub use cuneus::egui::SliderClamping;
 pub use bytemuck::{Pod, Zeroable};
 pub use cuneus::compute::*;
 pub use cuneus::prelude::*;

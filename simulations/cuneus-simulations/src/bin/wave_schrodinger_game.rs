@@ -106,7 +106,7 @@ impl ShaderManager for WaveSchrodingerGame {
         dbg!(freq, &potential, size);
         // Writes a new shader, with the arguments replaced:
         let unprocessed_shader = std::fs::read_to_string("shaders/wave_schrodinger_game.wgsl").expect("Unable to find shader");
-        let shader = unprocessed_shader.replace("{INPUTTED_FREQ}", &freq.to_string()).replace("{INPUTTED_SIZE}", &size.to_string()).replace("{INPUTTED_POTENTIAL}", &potential);
+        let shader = unprocessed_shader.replace("/*INPUTTED_FREQ*/", &freq.to_string()).replace("/*INPUTTED_SIZE*/", &size.to_string()).replace("/*INPUTTED_POTENTIAL*/", &potential);
         std::fs::write("shaders/wave_schrodinger_game_generated.wgsl", shader).expect("Unable to write shader");
 
         let compute_shader = create_compute_shader(core, config, params, "wave_schrodinger_game_generated");

@@ -155,8 +155,8 @@ fn update(@builtin(global_invocation_id) id: vec3<u32>) {
         }
     }
     if (time_data.time < 1.0) {
-        let FREQUENCY = f32({INPUTTED_FREQ});
-        let RADIUS = f32({INPUTTED_SIZE});
+        let FREQUENCY = f32(/*INPUTTED_FREQ*/);
+        let RADIUS = f32(/*INPUTTED_SIZE*/);
         var origin = -vec2<f32>(0.3, -0.5);
         if (params.scene == 1u) { // Prism
             origin = -vec2<f32>(0.2, -0.4);
