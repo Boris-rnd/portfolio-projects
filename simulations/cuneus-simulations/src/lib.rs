@@ -24,7 +24,7 @@ pub fn create_compute_shader<T: bytemuck::Pod>(core: &Core, config: ComputeConfi
     };
     config.hot_reload_path = Some(std::path::PathBuf::from(hot_reload_path.clone()));
     #[cfg(debug_assertions)]
-    let compute_shader = ComputeShader::from_builder(core, &std::fs::read_to_string(&hot_reload_path).unwrap(), config);
+    let compute_shader = ComputeShader::from_builder(core, &std::fs::read_to_string(&hot_reload_path).expect(&format!("Failed reading {hot_reload_path}")), config);
     #[cfg(not(debug_assertions))]
     let compute_shader = ComputeShader::from_builder(core, &std::fs::read_to_string(&hot_reload_path).unwrap(), config);
     // let compute_shader = ComputeShader::from_builder(core, include_str!(hot_reload_path), config);

@@ -91,6 +91,7 @@ fn update(
         if mouse_delta != Vec2::ZERO {
             let sensitivity = vec2(1., -1.) * 0.002;
 
+            
             let yaw = Quat::from_axis_angle(Vec3::Y, -mouse_delta.x * sensitivity.x);
             let right = Vec3::Y.cross(camera.direction).normalize();
             let pitch = Quat::from_axis_angle(right, -mouse_delta.y * sensitivity.y);

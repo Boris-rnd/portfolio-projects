@@ -70,7 +70,7 @@ impl ShaderManager for ParticleSimulation {
             ))
             .with_atomic_buffer(1)
             .build();
-        let compute_shader = create_compute_shader(core, config, params, "compiled/particle-basin");
+        let compute_shader = create_compute_shader(core, config, params, "compiled/particle-basin-compiled");
         core.queue.write_buffer(
             &compute_shader.storage_buffers[0],
             0,

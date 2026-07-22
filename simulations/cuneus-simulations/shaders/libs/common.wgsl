@@ -1,3 +1,8 @@
+@group(0) @binding(0) var<uniform> time_data: TimeUniform;
+@group(1) @binding(0) var output: texture_storage_2d<rgba16float, write>;
+@group(1) @binding(1) var<uniform> params: Params;
+@group(2) @binding(0) var<uniform> mouse: MouseUniform;
+
 // Group 0: Per-Frame Data (Engine-Managed)
 struct TimeUniform {
     time: f32,
@@ -13,17 +18,6 @@ struct MouseUniform {
 };
 
 
-// Group 3: User Data (Particles)
-struct Particle {
-    old_pos: vec2<f32>, // TODO: Vec2_64 doesn't seem to add that much precision...
-    pos: vec2<f32>, // TODO: Vec2_64 doesn't seem to add that much precision...
-    mass: f32,
-    enabled: u32,
-    _pad1: u32,
-    _pad2: u32,
-};
-
-
 // Utility function for random values
 fn hash(u: u32) -> u32 {
     var v = u;
@@ -36,36 +30,12 @@ fn hash(u: u32) -> u32 {
 }
 
 // Returns a pseudo-rng inside [0;1]
-fn rand(u: u32) -> f32 {
+fn hash_rand(u: u32) -> f32 {
     return f32(hash(u)) / 4294967295.0;
 }
-
-
-
-fn world_to_screen_pos(world_pos: vec2<f32>) -> vec2<u32> {
-    return vec2<u32>((world_pos - vec2<f32>(params.camera_pos_x, params.camera_pos_y)) * vec2<f32>(textureDimensions(output)) * params.camera_zoom);
-}
-
-fn screen_to_world_pos(screen_pos: vec2<u32>) -> vec2<f32> {
-    return vec2<f32>(((vec2<f32>(screen_pos)/params.camera_zoom)/vec2<f32>(textureDimensions(output)) + vec2<f32>(params.camera_pos_x, params.camera_pos_y)));
-}
-
-fn clear_screen_at(screen_pos: vec2<u32>) {
-    let dims = textureDimensions(output);
-    if (screen_pos.x >= dims.x || screen_pos.y >= dims.y) {
-        return;
-    }
-    let pos_px = vec2<u32>(screen_pos.xy);
-    textureStore(output, pos_px, vec4<f32>(vec3(0.0), 1.));
-
-    let world_pos = screen_to_world_pos(pos_px);
-
-    let idx = pos_px_to_buffer_idx(pos_px);
-    let col = vec3<f32>(f32(atomicLoad(&screen_atomic_buffer[idx]))/10.);
-    textureStore(output, pos_px, vec4<f32>(col, 1.));
-    atomicStore(&screen_atomic_buffer[idx], 0);
-
-    if abs(dot(world_pos,world_pos)-1.)<=0.01 {
-        textureStore(output, pos_px, vec4<f32>(vec3(1.0), 1.));
-    }
+fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
+    let cutoff = vec3<f32>(0.04045);
+    let below = c / 12.92;
+    let above = pow((c + 0.055) / 1.055, vec3<f32>(2.4));
+    return mix(above, below, cutoff);
 }

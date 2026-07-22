@@ -1,0 +1,59 @@
+// use std::{ffi::OsString, path::PathBuf};
+
+fn main() {
+    // Safety: no multithreading in sight !
+    // unsafe { std::env::set_var("OUT_DIR", "./shaders/compiled") }
+    // for f in std::fs::read_dir("shaders/libs").unwrap() {
+    //     let f = f.unwrap();
+    //     let fname = f.path();
+    //     if let Err(e) = compile_shader(fname.clone(), false) {
+    //         panic!("cargo:warning=Failed to compile {}: {e}", f.file_name().display());
+    //     }
+    // }
+    // for f in std::fs::read_dir("shaders").unwrap() {
+    //     let f = f.unwrap();
+    //     let fname = f.path();
+    //     if let Err(e) = compile_shader(fname.clone(), true) {
+    //         panic!("cargo:warning=Failed to compile {}: {e}", f.file_name().display());
+    //     }
+    // }
+    // use std::env;
+    // let out_dir = env::var("OUT_DIR").unwrap();
+    // std::fs::write("a.txt", out_dir.clone()).unwrap();
+    // dbg!(out_dir);
+}
+// fn compile_shader(path: PathBuf, wesl: bool) -> Result<(), String>{
+//     let name = path.file_name().and_then(|n| n.to_str()).ok_or("Invalid filename").unwrap();
+//     let ext = name.trim().split(".").last().ok_or("Invalid extension").unwrap();
+//     if ext != "wgsl" && ext != "wesl" {
+//         println!("cargo:warning=Skipping {name}");
+//         return Ok(());
+//     }
+//     println!("cargo:warning=Compiling {name}");
+//     let name = name.trim_end().strip_suffix(&format!(".{ext}")).ok_or("Invalid name").unwrap();
+
+//     std::fs::write(format!("./shaders/compiled/{name}.wgsl"), load_shader_with_includes(&path).map_err(|e| e.to_string()).unwrap()).map_err(|e| e.to_string()).unwrap();
+//     if wesl {
+//         wesl::Wesl::new("shaders/compiled")
+//             .build_artifact(&format!("package::{name}").parse().expect("Invalid artifact"), name);
+//     }
+//     Ok(())
+// }
+// fn load_shader_with_includes(path: &PathBuf) -> Result<String, String> {
+//     let mut content = std::fs::read_to_string(path).map_err(|e| e.to_string()).unwrap();
+
+//     for line in content.clone().lines() {
+//         if line.contains("include!(\"") {
+//             println!("cargo:warning={line}");
+//             let include_path = line.trim_start().strip_prefix("include!(\"").unwrap().trim_end().strip_suffix("\");").unwrap();
+//             println!("cargo:warning=Including {include_path}");
+//             let include_path = path.canonicalize().unwrap().join(include_path);
+//             let include_content = std::fs::read_to_string(&include_path).map_err(|e| e.to_string()).unwrap();
+
+//             let target = format!("include!(\"{}\");", include_path);
+//             println!("cargo:warning=Replacing {target}");
+//             content = content.replace(&target, &include_content);
+//         }
+//     }
+//     Ok(content)
+// }
