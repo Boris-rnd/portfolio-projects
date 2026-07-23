@@ -29,7 +29,7 @@ include!("libs/voxel_utils.wgsl");
 
 fn prev_hit(ray: Ray) -> HitRecord {
     var miss = invalid_rec();
-
+    
     // Initialise ray inside root chunk
     var posf = ray.orig;
     let world_min = vec3<f32>(0.0);
@@ -43,9 +43,7 @@ fn prev_hit(ray: Ray) -> HitRecord {
             return miss;
         }
         posf = at(ray, t + 1e-3);
-    }
-    if (true) {
-        return valid_rec(posf, ray.dir, 0u);
+        return HitRecord(vec3(0.), vec3(0.), t, vec3(0.));
     }
 
     // Setup stacks for the descent of sparse tree
@@ -79,7 +77,7 @@ fn prev_hit(ray: Ray) -> HitRecord {
         // Check if outside of current chunk
         if any((posi - parent_pos) < vec3(0)) || any(local_pos >= vec3(i32(CHUNK_SIZE))) {
             // Outside of previous chunk, if curr_depth==1, then outside of root chunk so won't hit anything else
-            if curr_depth == 1u { 
+            if curr_depth == 1u {
                 break;
             }
             // Ascent
@@ -148,12 +146,16 @@ fn prev_hit(ray: Ray) -> HitRecord {
 fn ray_color(r: Ray) -> vec3<f32> {
     var res = prev_hit(r);
 
-    if (res.t == INVALID_BOX_HIT) {
+    if (res.t == 1e30) {
         if all(res.p == vec3(1., 1., 1.)) {
             return vec3(1., 0., 0.); // Error color
         }
-        // Sky contribution
-        return vec3(1., 1., 0.);
+    } else {
+        let s = u32(at(r, res.t).x/2.) + u32(at(r, res.t).y/2.)*10000000 + u32(at(r, res.t).z/2.)*10;
+        let x = wang_random_f32(s);
+        let y = wang_random_f32(s+1);
+        let z = wang_random_f32(s+2);
+        return vec3(x, y, z);
     }
 
     if (hit_sphere(vec3(0.,0.,1.), 0.5, r)) {
@@ -164,19 +166,18 @@ fn ray_color(r: Ray) -> vec3<f32> {
         let inter_point = r.orig + res_box * r.dir;
         return vec3(100., 1., 1.) - inter_point;
     }
-    let unit_direction = normalize(r.dir);
-    let a = 0.5*(unit_direction.y + 1.0);
-    return (1.0-a)*vec3(1.0) + a*vec3(0.5, 0.7, 1.0);
+    return skybox(r.dir);
 }
 
 @compute @workgroup_size(16, 16)
 fn render(@builtin(global_invocation_id) id: vec3<u32>) {
     let udims = textureDimensions(output);
     if (id.x >= udims.x || id.y >= udims.y) {return;}
+    init_rng(id.xy, time_data.frame, u32(params.camera_pos_x));
     let dims = vec2<f32>(udims);
     var uv = (vec2<f32>(id.xy)/dims-vec2(0.5))*dims*2.;
     uv.y = -uv.y;
-    var col = vec3<f32>(uv, 0.0);
+    var col = vec3<f32>(0.0);
     
     let cam_center = vec3(params.camera_pos_x, params.camera_pos_y, params.camera_pos_z);
     let cam_dir = vec3(params.camera_dir_x, params.camera_dir_y, params.camera_dir_z);
@@ -184,7 +185,7 @@ fn render(@builtin(global_invocation_id) id: vec3<u32>) {
     let lookfrom = cam_center;     
     let lookat = cam_center + cam_dir;
     let vup = vec3(0., 1., 0.);
-    let fov = degrees_to_radians(90.);
+    let fov = degrees_to_radians(50.);
     let h = tan(fov / 2);
     let focal_length = 2.0;
     let viewport_height = 2. * h * focal_length;
@@ -210,11 +211,13 @@ fn render(@builtin(global_invocation_id) id: vec3<u32>) {
     let defocus_disk_v = v * defocus_radius;
 
     let focus = false;
-    var samples_per_pixel = 1;
+    var samples_per_pixel = 2;
 
-    let pixel_center = pixel00_loc + ((uv.x) * pixel_delta_u) + ((uv.y) * pixel_delta_v);
-    let ray_dir = normalize(pixel_center - lookfrom);
-    col = ray_color(Ray(lookfrom, ray_dir));
+    for (var i = 0; i<samples_per_pixel; i++) {
+        let pixel_center = pixel00_loc + ((uv.x+(f32(i))/(f32(samples_per_pixel)/2)) * pixel_delta_u) + ((uv.y+(f32(i)/(f32(samples_per_pixel)/2))) * pixel_delta_v);
+        let ray_dir = normalize(pixel_center - lookfrom);
+        col += ray_color(Ray(lookfrom, ray_dir))/f32(samples_per_pixel);
+    }
     
     textureStore(output, id.xy, vec4<f32>(col, 1.0));
 }

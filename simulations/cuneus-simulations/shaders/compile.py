@@ -50,8 +50,8 @@ def on_modified(wgsl_file):
                 compile_wgsl(event.src_path)
             else: compile_wgsl(wgsl_file)
         except IsADirectoryError:pass
-        except Exception as e:
-            print(f"Error compiling {wgsl_file}: {e}")
+        # except Exception as e:
+        #     print(f"Error compiling {wgsl_file}: {e}")
     return on_modified_inner
 
 
@@ -62,7 +62,7 @@ def compile_wgsl(file: str):
         sys.exit(1)
 
     # Put in compiled directory
-    output_file = os.path.join(os.path.dirname(file), 'compiled', os.path.basename(file).replace('.wgsl', '-compiled.wgsl'))
+    output_file = os.path.join("shaders", 'compiled', os.path.basename(file).replace('.wgsl', '-compiled.wgsl'))
     formatted_content = format_doc(file)
 
     tmp_file = output_file.replace(".wgsl", ".wgsl.tmp")

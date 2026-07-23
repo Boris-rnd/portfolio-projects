@@ -9,3 +9,5 @@ dot_vox = "5.2.0"
 hashbrown = {workspace=true}
 glam = {workspace=true}
 bytemuck = {workspace=true}
+anyhow = {workspace=true}
+log = {workspace=true}

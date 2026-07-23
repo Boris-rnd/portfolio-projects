@@ -1,4 +1,5 @@
 use dot_vox::*;
+use anyhow::Result;
 
 use super::*;
 use crate::*;

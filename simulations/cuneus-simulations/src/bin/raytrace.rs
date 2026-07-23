@@ -1,5 +1,6 @@
 use cuneus::winit::{dpi::PhysicalPosition, event::ElementState};
-use cuneus_simulations::{world::{MapDataPacked, VoxelChunk}, *};
+use cuneus_simulations::*;
+use world::{MapDataPacked, VoxelChunk};
 use glam::Vec3;
 use log::info;
 

@@ -1,4 +1,4 @@
-use cuneus::anyhow::anyhow;
+use anyhow::{anyhow, Result};
 
 use super::*;
 use crate::*;
