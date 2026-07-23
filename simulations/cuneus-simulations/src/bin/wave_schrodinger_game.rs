@@ -21,7 +21,6 @@ cuneus::uniform_params! {
     // Total: 4+4+4+4 + 8+4+4 + 4+4+4+4 + 4+4+8 = 80 bytes (multiple of 16 ✓)
 }}
 
-
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable, Default)]
 struct Cell {
@@ -32,8 +31,6 @@ struct Cell {
     // _pad: u32,
     _pad: [u32; 1],
 }
-
-
 
 struct WaveSchrodingerGame {
     base: RenderKit,
@@ -100,16 +97,28 @@ impl ShaderManager for WaveSchrodingerGame {
             .build();
 
         let mut args = pico_args::Arguments::from_env();
-        let freq = args.value_from_fn("--freq", |val| val.parse::<f32>()).unwrap_or(1500.0);
-        let size = args.value_from_fn("--size", |val| val.parse::<f32>()).unwrap_or(0.025);
-        let potential = args.value_from_str("--potential").unwrap_or("step(0.1, max(-triangle((uv-vec2(0., 0.2))*8.0), 0.))".to_string());
+        let freq = args
+            .value_from_fn("--freq", |val| val.parse::<f32>())
+            .unwrap_or(1500.0);
+        let size = args
+            .value_from_fn("--size", |val| val.parse::<f32>())
+            .unwrap_or(0.025);
+        let potential = args
+            .value_from_str("--potential")
+            .unwrap_or("step(0.1, max(-triangle((uv-vec2(0., 0.2))*8.0), 0.))".to_string());
         dbg!(freq, &potential, size);
         // Writes a new shader, with the arguments replaced:
-        let unprocessed_shader = std::fs::read_to_string("shaders/wave_schrodinger_game.wgsl").expect("Unable to find shader");
-        let shader = unprocessed_shader.replace("/*INPUTTED_FREQ*/", &freq.to_string()).replace("/*INPUTTED_SIZE*/", &size.to_string()).replace("/*INPUTTED_POTENTIAL*/", &potential);
-        std::fs::write("shaders/wave_schrodinger_game_generated.wgsl", shader).expect("Unable to write shader");
+        let unprocessed_shader = std::fs::read_to_string("shaders/wave_schrodinger_game.wgsl")
+            .expect("Unable to find shader");
+        let shader = unprocessed_shader
+            .replace("/*INPUTTED_FREQ*/", &freq.to_string())
+            .replace("/*INPUTTED_SIZE*/", &size.to_string())
+            .replace("/*INPUTTED_POTENTIAL*/", &potential);
+        std::fs::write("shaders/wave_schrodinger_game_generated.wgsl", shader)
+            .expect("Unable to write shader");
 
-        let compute_shader = create_compute_shader(core, config, params, "wave_schrodinger_game_generated");
+        let compute_shader =
+            create_compute_shader(core, config, params, "wave_schrodinger_game_generated");
         // Initialise both buffers identically
         core.queue.write_buffer(
             &compute_shader.storage_buffers[0],
@@ -143,17 +152,23 @@ impl ShaderManager for WaveSchrodingerGame {
 
         // Update time and params
         let current_time = self.base.controls.get_time(&self.base.start_time);
-        self.compute_shader.set_time(current_time, 1.0 / 60.0, &core.queue);
-        
+        self.compute_shader
+            .set_time(current_time, 1.0 / 60.0, &core.queue);
+
         self.compute_shader.time_uniform.data.frame = self.frame_count;
         self.compute_shader.time_uniform.update(&core.queue);
         self.frame_count += 1;
         let size = core.window.inner_size();
         self.params.window_width = size.width as u32;
         self.params.window_height = size.height as u32;
-        self.compute_shader.update_mouse_uniform(&self.base.mouse_tracker.uniform, &core.queue);
+        self.compute_shader
+            .update_mouse_uniform(&self.base.mouse_tracker.uniform, &core.queue);
 
-        let mut controls_request = self.base.controls.get_ui_request(&self.base.start_time, &core.size, self.base.fps_tracker.fps());
+        let mut controls_request = self.base.controls.get_ui_request(
+            &self.base.start_time,
+            &core.size,
+            self.base.fps_tracker.fps(),
+        );
         // Scroll obstacles to the left each frame to follow the wave.
         self.params.scroll += 150.0 * (1.0 / 60.0);
         if self.params.scroll > 1e4 {
@@ -164,13 +179,43 @@ impl ShaderManager for WaveSchrodingerGame {
         let full_output = self.base.render_ui(core, |ctx| {
             RenderKit::apply_default_style(ctx);
             egui::Window::new("Wave Schrodinger Simulation").show(ctx, |ui| {
-                ui.add(egui::Slider::new(&mut self.params.camera_zoom, 0.1..=5.0).text("Zoom").logarithmic(true).clamping(egui::SliderClamping::Never));
-                ui.add(egui::Slider::new(&mut self.params.speed, 0.0..=20.).text("Speed").logarithmic(true).clamping(egui::SliderClamping::Never));
-                ui.add(egui::Slider::new(&mut self.params.force, -1.0..=1.0).text("Force").clamping(egui::SliderClamping::Never));
-                ui.add(egui::Slider::new(&mut self.params.restitution, 0.0..=10.0).text("Restitution").logarithmic(true).clamping(egui::SliderClamping::Never));
-                ui.add(egui::Slider::new(&mut self.params.camera_pos[0], -1.0..=1.0).text("Camera x").clamping(egui::SliderClamping::Never));
-                ui.add(egui::Slider::new(&mut self.params.camera_pos[1], -1.0..=1.0).text("Camera y").clamping(egui::SliderClamping::Never));
-                ui.add(egui::Slider::new(&mut self.params.scene, 0..=2).text("Scene (0=Wave, 1=Prism, 2=Slit)"));
+                ui.add(
+                    egui::Slider::new(&mut self.params.camera_zoom, 0.1..=5.0)
+                        .text("Zoom")
+                        .logarithmic(true)
+                        .clamping(egui::SliderClamping::Never),
+                );
+                ui.add(
+                    egui::Slider::new(&mut self.params.speed, 0.0..=20.)
+                        .text("Speed")
+                        .logarithmic(true)
+                        .clamping(egui::SliderClamping::Never),
+                );
+                ui.add(
+                    egui::Slider::new(&mut self.params.force, -1.0..=1.0)
+                        .text("Force")
+                        .clamping(egui::SliderClamping::Never),
+                );
+                ui.add(
+                    egui::Slider::new(&mut self.params.restitution, 0.0..=10.0)
+                        .text("Restitution")
+                        .logarithmic(true)
+                        .clamping(egui::SliderClamping::Never),
+                );
+                ui.add(
+                    egui::Slider::new(&mut self.params.camera_pos[0], -1.0..=1.0)
+                        .text("Camera x")
+                        .clamping(egui::SliderClamping::Never),
+                );
+                ui.add(
+                    egui::Slider::new(&mut self.params.camera_pos[1], -1.0..=1.0)
+                        .text("Camera y")
+                        .clamping(egui::SliderClamping::Never),
+                );
+                ui.add(
+                    egui::Slider::new(&mut self.params.scene, 0..=2)
+                        .text("Scene (0=Wave, 1=Prism, 2=Slit)"),
+                );
                 let mut edge_damping = (self.params.flags & 2u32) == 2u32;
                 if ui.checkbox(&mut edge_damping, "Edge damping").changed() {
                     if edge_damping {
@@ -202,7 +247,8 @@ impl ShaderManager for WaveSchrodingerGame {
         // ---------- update: runs N times, ping-pong flips each iteration ----------
         let iterations: u32 = 20;
         for _ in 0..iterations {
-            self.compute_shader.set_custom_params(self.params, &core.queue);
+            self.compute_shader
+                .set_custom_params(self.params, &core.queue);
             self.compute_shader.dispatch_stage_with_workgroups(
                 &mut frame.encoder,
                 UPDATE,
@@ -215,7 +261,8 @@ impl ShaderManager for WaveSchrodingerGame {
         }
 
         // ---------- clear_screen: once ----------
-        self.compute_shader.set_custom_params(self.params, &core.queue);
+        self.compute_shader
+            .set_custom_params(self.params, &core.queue);
         self.compute_shader.dispatch_stage_with_workgroups(
             &mut frame.encoder,
             CLEAR_SCREEN,
@@ -224,7 +271,8 @@ impl ShaderManager for WaveSchrodingerGame {
         frame.encoder = core.flush_encoder(frame.encoder);
 
         // ---------- render: once ----------
-        self.compute_shader.set_custom_params(self.params, &core.queue);
+        self.compute_shader
+            .set_custom_params(self.params, &core.queue);
         self.compute_shader.dispatch_stage_with_workgroups(
             &mut frame.encoder,
             RENDER,
@@ -252,7 +300,9 @@ impl ShaderManager for WaveSchrodingerGame {
     }
 
     fn handle_input(&mut self, core: &Core, event: &winit::event::WindowEvent) -> bool {
-        if self.base.default_handle_input(core, event) {return true;}
+        if self.base.default_handle_input(core, event) {
+            return true;
+        }
         match event {
             winit::event::WindowEvent::MouseWheel { delta, .. } => {
                 // Todo zoom in and out
@@ -260,39 +310,38 @@ impl ShaderManager for WaveSchrodingerGame {
                 self.params.camera_zoom += match delta {
                     winit::event::MouseScrollDelta::LineDelta(_, y) => *y,
                     winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
-                } as f32 * 0.1;
+                } as f32
+                    * 0.1;
                 true
-            },
-            winit::event::WindowEvent::KeyboardInput { event, .. } => {
-                match event.physical_key {
-                    winit::keyboard::PhysicalKey::Code(KeyCode::ArrowLeft) => {
-                        self.params.camera_pos[0] -= 0.1;
-                        true
-                    },
-                    winit::keyboard::PhysicalKey::Code(KeyCode::ArrowRight) => {
-                        self.params.camera_pos[0] += 0.1;
-                        true
-                    },
-                    winit::keyboard::PhysicalKey::Code(KeyCode::ArrowUp) => {
-                        self.params.camera_pos[1] -= 0.1;
-                        true
-                    },
-                    winit::keyboard::PhysicalKey::Code(KeyCode::ArrowDown) => {
-                        self.params.camera_pos[1] += 0.1;
-                        true
-                    },
-                    winit::keyboard::PhysicalKey::Code(KeyCode::KeyJ) => {
-                        self.params.control = 1.0;
-                        true
-                    },
-                    winit::keyboard::PhysicalKey::Code(KeyCode::KeyK) => {
-                        self.params.control = -1.0;
-                        true
-                    },
-                    _ => false
+            }
+            winit::event::WindowEvent::KeyboardInput { event, .. } => match event.physical_key {
+                winit::keyboard::PhysicalKey::Code(KeyCode::ArrowLeft) => {
+                    self.params.camera_pos[0] -= 0.1;
+                    true
                 }
+                winit::keyboard::PhysicalKey::Code(KeyCode::ArrowRight) => {
+                    self.params.camera_pos[0] += 0.1;
+                    true
+                }
+                winit::keyboard::PhysicalKey::Code(KeyCode::ArrowUp) => {
+                    self.params.camera_pos[1] -= 0.1;
+                    true
+                }
+                winit::keyboard::PhysicalKey::Code(KeyCode::ArrowDown) => {
+                    self.params.camera_pos[1] += 0.1;
+                    true
+                }
+                winit::keyboard::PhysicalKey::Code(KeyCode::KeyJ) => {
+                    self.params.control = 1.0;
+                    true
+                }
+                winit::keyboard::PhysicalKey::Code(KeyCode::KeyK) => {
+                    self.params.control = -1.0;
+                    true
+                }
+                _ => false,
             },
-            _ => false
+            _ => false,
         }
     }
 }

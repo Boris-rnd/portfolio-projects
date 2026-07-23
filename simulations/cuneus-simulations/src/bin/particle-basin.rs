@@ -13,7 +13,6 @@ cuneus::uniform_params! {
     // padding: [u32;2]
 }}
 
-
 cuneus::uniform_params! {
     struct Particle {
         old_pos: [f32; 2],
@@ -35,7 +34,12 @@ impl ShaderManager for ParticleSimulation {
 
         let particle_count = 2_000_000;
         let particles = vec![
-            Particle {pos:[0.0,0.0],old_pos:[0.0,0.0],mass:1.0,_pad:[0;3] };
+            Particle {
+                pos: [0.0, 0.0],
+                old_pos: [0.0, 0.0],
+                mass: 1.0,
+                _pad: [0; 3]
+            };
             particle_count
         ];
 
@@ -52,10 +56,18 @@ impl ShaderManager for ParticleSimulation {
 
         let passes = vec![
             // Update logic
-            PassDescription::new("update", &[]).with_workgroup_size([particle_count.div_ceil(64) as u32,1,1,]),
+            PassDescription::new("update", &[]).with_workgroup_size([
+                particle_count.div_ceil(64) as u32,
+                1,
+                1,
+            ]),
             // Render logic
             PassDescription::new("clear_screen", &[]),
-            PassDescription::new("splat", &["update"]).with_workgroup_size([particle_count.div_ceil(64) as u32, 1, 1]),
+            PassDescription::new("splat", &["update"]).with_workgroup_size([
+                particle_count.div_ceil(64) as u32,
+                1,
+                1,
+            ]),
             // PassDescription::new("render", &[]),
         ];
 
@@ -70,7 +82,8 @@ impl ShaderManager for ParticleSimulation {
             ))
             .with_atomic_buffer(1)
             .build();
-        let compute_shader = create_compute_shader(core, config, params, "compiled/particle-basin-compiled");
+        let compute_shader =
+            create_compute_shader(core, config, params, "compiled/particle-basin-compiled");
         core.queue.write_buffer(
             &compute_shader.storage_buffers[0],
             0,
@@ -92,25 +105,50 @@ impl ShaderManager for ParticleSimulation {
 
         // Update time and params
         let current_time = self.base.controls.get_time(&self.base.start_time);
-        self.compute_shader.set_time(current_time, 1.0/60.0, &core.queue);
-        self.compute_shader.set_custom_params(self.params, &core.queue);
-        self.compute_shader.update_mouse_uniform(&self.base.mouse_tracker.uniform, &core.queue);
+        self.compute_shader
+            .set_time(current_time, 1.0 / 60.0, &core.queue);
+        self.compute_shader
+            .set_custom_params(self.params, &core.queue);
+        self.compute_shader
+            .update_mouse_uniform(&self.base.mouse_tracker.uniform, &core.queue);
 
-        let mut controls_request = self.base.controls.get_ui_request(&self.base.start_time, &core.size, self.base.fps_tracker.fps());
+        let mut controls_request = self.base.controls.get_ui_request(
+            &self.base.start_time,
+            &core.size,
+            self.base.fps_tracker.fps(),
+        );
         // UI
         let full_output = self.base.render_ui(core, |ctx| {
             RenderKit::apply_default_style(ctx);
             egui::Window::new("Particle Simulation").show(ctx, |ui| {
-                ui.add(egui::Slider::new(&mut self.params.gravity, -1.0..=10.).text("Gravity").logarithmic(true).clamping(SliderClamping::Never));
-                ui.add(egui::Slider::new(&mut self.params.particle_size, 1..=5).text("Size (px)").clamping(SliderClamping::Never));
-                ui.add(egui::Slider::new(&mut self.params.camera_zoom, 0.1..=5.0).text("Zoom").logarithmic(true).clamping(SliderClamping::Never));
-                ui.add(egui::Slider::new(&mut self.params.speed, 0.0..=10.).text("Speed").logarithmic(true).clamping(SliderClamping::Never));
+                ui.add(
+                    egui::Slider::new(&mut self.params.gravity, -1.0..=10.)
+                        .text("Gravity")
+                        .logarithmic(true)
+                        .clamping(SliderClamping::Never),
+                );
+                ui.add(
+                    egui::Slider::new(&mut self.params.particle_size, 1..=5)
+                        .text("Size (px)")
+                        .clamping(SliderClamping::Never),
+                );
+                ui.add(
+                    egui::Slider::new(&mut self.params.camera_zoom, 0.1..=5.0)
+                        .text("Zoom")
+                        .logarithmic(true)
+                        .clamping(SliderClamping::Never),
+                );
+                ui.add(
+                    egui::Slider::new(&mut self.params.speed, 0.0..=10.)
+                        .text("Speed")
+                        .logarithmic(true)
+                        .clamping(SliderClamping::Never),
+                );
                 if ui.button("Reset").clicked() {
                     self.params.reset = 1;
                 }
                 ui.separator();
                 ShaderControls::render_controls_widget(ui, &mut controls_request);
-
             });
         });
 
@@ -133,7 +171,9 @@ impl ShaderManager for ParticleSimulation {
     }
 
     fn handle_input(&mut self, core: &Core, event: &winit::event::WindowEvent) -> bool {
-        if self.base.default_handle_input(core, event) {return true;}
+        if self.base.default_handle_input(core, event) {
+            return true;
+        }
         match event {
             winit::event::WindowEvent::MouseWheel { delta, .. } => {
                 // Todo zoom in and out
@@ -142,34 +182,30 @@ impl ShaderManager for ParticleSimulation {
                     winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
                 } * 0.005;
                 true
-            },
-            winit::event::WindowEvent::KeyboardInput { event, .. } => {
-                match event.physical_key {
-                    winit::keyboard::PhysicalKey::Code(KeyCode::ArrowLeft) => {
-                        self.params.camera_pos[0] -= 0.1;
-                        true
-                    },
-                    winit::keyboard::PhysicalKey::Code(KeyCode::ArrowRight) => {
-                        self.params.camera_pos[0] += 0.1;
-                        true
-                    },
-                    winit::keyboard::PhysicalKey::Code(KeyCode::ArrowUp) => {
-                        self.params.camera_pos[1] -= 0.1;
-                        true
-                    },
-                    winit::keyboard::PhysicalKey::Code(KeyCode::ArrowDown) => {
-                        self.params.camera_pos[1] += 0.1;
-                        true
-                    },
-                    _ => false
+            }
+            winit::event::WindowEvent::KeyboardInput { event, .. } => match event.physical_key {
+                winit::keyboard::PhysicalKey::Code(KeyCode::ArrowLeft) => {
+                    self.params.camera_pos[0] -= 0.1;
+                    true
                 }
+                winit::keyboard::PhysicalKey::Code(KeyCode::ArrowRight) => {
+                    self.params.camera_pos[0] += 0.1;
+                    true
+                }
+                winit::keyboard::PhysicalKey::Code(KeyCode::ArrowUp) => {
+                    self.params.camera_pos[1] -= 0.1;
+                    true
+                }
+                winit::keyboard::PhysicalKey::Code(KeyCode::ArrowDown) => {
+                    self.params.camera_pos[1] += 0.1;
+                    true
+                }
+                _ => false,
             },
-            _ => false
+            _ => false,
         }
     }
 }
-
-
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // main_copy::main()

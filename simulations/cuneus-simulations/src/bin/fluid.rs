@@ -15,9 +15,8 @@ cuneus::uniform_params! {
     drag: f32,
     viscosity: f32,
     _pad: [u32; 3],
-    
-}}
 
+}}
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
@@ -27,8 +26,6 @@ struct Particle {
     mass: f32,
     _pad: [u32; 3],
 }
-
-
 
 struct FluidSimulation {
     base: RenderKit,
@@ -111,30 +108,80 @@ impl ShaderManager for FluidSimulation {
 
         // Update time and params
         let current_time = self.base.controls.get_time(&self.base.start_time);
-        self.compute_shader.set_time(current_time, 1.0/60.0, &core.queue);
-        self.compute_shader.set_custom_params(self.params, &core.queue);
-        self.compute_shader.update_mouse_uniform(&self.base.mouse_tracker.uniform, &core.queue);
+        self.compute_shader
+            .set_time(current_time, 1.0 / 60.0, &core.queue);
+        self.compute_shader
+            .set_custom_params(self.params, &core.queue);
+        self.compute_shader
+            .update_mouse_uniform(&self.base.mouse_tracker.uniform, &core.queue);
 
-        let mut controls_request = self.base.controls.get_ui_request(&self.base.start_time, &core.size, self.base.fps_tracker.fps());
+        let mut controls_request = self.base.controls.get_ui_request(
+            &self.base.start_time,
+            &core.size,
+            self.base.fps_tracker.fps(),
+        );
         // UI
         let full_output = self.base.render_ui(core, |ctx| {
             RenderKit::apply_default_style(ctx);
             egui::Window::new("Particle Simulation").show(ctx, |ui| {
-                ui.add(egui::Slider::new(&mut self.params.gravity, 0.0..=20.0).text("Gravity").clamping(egui::SliderClamping::Never).logarithmic(true));
-                ui.add(egui::Slider::new(&mut self.params.particle_size, 1..=5).text("Size (px)").clamping(egui::SliderClamping::Never));
-                ui.add(egui::Slider::new(&mut self.params.camera_zoom, 0.1..=5.0).text("Zoom").logarithmic(true).clamping(egui::SliderClamping::Never));
-                ui.add(egui::Slider::new(&mut self.params.speed, 0.0..=0.1).text("Speed").logarithmic(true).clamping(egui::SliderClamping::Never));
-                ui.add(egui::Slider::new(&mut self.params.h, 0.001..=0.1).text("Kernel Radius").logarithmic(true).clamping(egui::SliderClamping::Never));
-                ui.add(egui::Slider::new(&mut self.params.rest_density, 100.0..=10000.0).text("Rest Density").logarithmic(true).clamping(egui::SliderClamping::Never));
-                ui.add(egui::Slider::new(&mut self.params.k, 10.0..=1000.0).text("Pressure").logarithmic(true).clamping(egui::SliderClamping::Never));
-                ui.add(egui::Slider::new(&mut self.params.drag, 0.0..=1.0).text("Drag").logarithmic(true).clamping(egui::SliderClamping::Never));
-                ui.add(egui::Slider::new(&mut self.params.viscosity, 0.0..=1.0).text("Viscosity").logarithmic(true).clamping(egui::SliderClamping::Never));
+                ui.add(
+                    egui::Slider::new(&mut self.params.gravity, 0.0..=20.0)
+                        .text("Gravity")
+                        .clamping(egui::SliderClamping::Never)
+                        .logarithmic(true),
+                );
+                ui.add(
+                    egui::Slider::new(&mut self.params.particle_size, 1..=5)
+                        .text("Size (px)")
+                        .clamping(egui::SliderClamping::Never),
+                );
+                ui.add(
+                    egui::Slider::new(&mut self.params.camera_zoom, 0.1..=5.0)
+                        .text("Zoom")
+                        .logarithmic(true)
+                        .clamping(egui::SliderClamping::Never),
+                );
+                ui.add(
+                    egui::Slider::new(&mut self.params.speed, 0.0..=0.1)
+                        .text("Speed")
+                        .logarithmic(true)
+                        .clamping(egui::SliderClamping::Never),
+                );
+                ui.add(
+                    egui::Slider::new(&mut self.params.h, 0.001..=0.1)
+                        .text("Kernel Radius")
+                        .logarithmic(true)
+                        .clamping(egui::SliderClamping::Never),
+                );
+                ui.add(
+                    egui::Slider::new(&mut self.params.rest_density, 100.0..=10000.0)
+                        .text("Rest Density")
+                        .logarithmic(true)
+                        .clamping(egui::SliderClamping::Never),
+                );
+                ui.add(
+                    egui::Slider::new(&mut self.params.k, 10.0..=1000.0)
+                        .text("Pressure")
+                        .logarithmic(true)
+                        .clamping(egui::SliderClamping::Never),
+                );
+                ui.add(
+                    egui::Slider::new(&mut self.params.drag, 0.0..=1.0)
+                        .text("Drag")
+                        .logarithmic(true)
+                        .clamping(egui::SliderClamping::Never),
+                );
+                ui.add(
+                    egui::Slider::new(&mut self.params.viscosity, 0.0..=1.0)
+                        .text("Viscosity")
+                        .logarithmic(true)
+                        .clamping(egui::SliderClamping::Never),
+                );
                 if ui.button("Reset").clicked() {
                     self.params.reset = 1;
                 }
                 ui.separator();
                 ShaderControls::render_controls_widget(ui, &mut controls_request);
-
             });
         });
 
@@ -157,7 +204,9 @@ impl ShaderManager for FluidSimulation {
     }
 
     fn handle_input(&mut self, core: &Core, event: &winit::event::WindowEvent) -> bool {
-        if self.base.default_handle_input(core, event) {return true;}
+        if self.base.default_handle_input(core, event) {
+            return true;
+        }
         match event {
             winit::event::WindowEvent::MouseWheel { delta, .. } => {
                 // Todo zoom in and out
@@ -165,31 +214,30 @@ impl ShaderManager for FluidSimulation {
                 self.params.camera_zoom += match delta {
                     winit::event::MouseScrollDelta::LineDelta(_, y) => *y,
                     winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
-                } as f32 * 0.1;
+                } as f32
+                    * 0.1;
                 true
-            },
-            winit::event::WindowEvent::KeyboardInput { event, .. } => {
-                match event.physical_key {
-                    winit::keyboard::PhysicalKey::Code(KeyCode::ArrowLeft) => {
-                        self.params.camera_pos[0] -= 0.1;
-                        true
-                    },
-                    winit::keyboard::PhysicalKey::Code(KeyCode::ArrowRight) => {
-                        self.params.camera_pos[0] += 0.1;
-                        true
-                    },
-                    winit::keyboard::PhysicalKey::Code(KeyCode::ArrowUp) => {
-                        self.params.camera_pos[1] -= 0.1;
-                        true
-                    },
-                    winit::keyboard::PhysicalKey::Code(KeyCode::ArrowDown) => {
-                        self.params.camera_pos[1] += 0.1;
-                        true
-                    },
-                    _ => false
+            }
+            winit::event::WindowEvent::KeyboardInput { event, .. } => match event.physical_key {
+                winit::keyboard::PhysicalKey::Code(KeyCode::ArrowLeft) => {
+                    self.params.camera_pos[0] -= 0.1;
+                    true
                 }
+                winit::keyboard::PhysicalKey::Code(KeyCode::ArrowRight) => {
+                    self.params.camera_pos[0] += 0.1;
+                    true
+                }
+                winit::keyboard::PhysicalKey::Code(KeyCode::ArrowUp) => {
+                    self.params.camera_pos[1] -= 0.1;
+                    true
+                }
+                winit::keyboard::PhysicalKey::Code(KeyCode::ArrowDown) => {
+                    self.params.camera_pos[1] += 0.1;
+                    true
+                }
+                _ => false,
             },
-            _ => false
+            _ => false,
         }
     }
 }

@@ -69,6 +69,7 @@ fn hit_box_t(ray: Ray, bmin: vec3<f32>, bmax: vec3<f32>) -> f32 {
 
 
 
+
 fn ray_depth(ray: Ray) -> f32 {
     var max_depth = 1e30;
     var depth = 0.;

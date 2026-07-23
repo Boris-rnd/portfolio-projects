@@ -1,11 +1,17 @@
 // #import bevy_sprite::{mesh2d_vertex_output::VertexOutput, mesh2d_view_bindings::globals}; 
 
-
+// Accumulating frame uses this previous buffer and averages them out
 @group(0) @binding(0) var<storage, read_write> accumulated_tex: array<u32>;
 @group(0) @binding(1) var<uniform> cam: Camera;
+// Holds the previous t value at which we can safely advance the ray
+// Because this shader is invoked after the beam.wgsl which is the raytracer rendered at lower resolution, but it gives a rough idea about how far we can go
 @group(0) @binding(2) var<storage, read> max_depth: array<f32>;
+// Draw textures from texture_id, but currently unused
 @group(0) @binding(3) var atlas: texture_storage_2d_array<rgba8unorm, read>;
+// The main voxel data
 @group(0) @binding(4) var<storage, read> voxel_chunks: array<VoxelChunk>;
+// Holds block data, but has 4 storages for size / performance if I remember correctly... 
+// I think I should be able to simplify this
 @group(0) @binding(5) var<storage, read> block_data0: array<MapData>;
 @group(0) @binding(6) var<storage, read> block_data1: array<MapData>;
 @group(0) @binding(7) var<storage, read> block_data2: array<MapData>;

@@ -65,8 +65,12 @@ def compile_wgsl(file: str):
     output_file = os.path.join(os.path.dirname(file), 'compiled', os.path.basename(file).replace('.wgsl', '-compiled.wgsl'))
     formatted_content = format_doc(file)
 
-    with open(output_file, 'w') as f:
+    tmp_file = output_file.replace(".wgsl", ".wgsl.tmp")
+    with open(tmp_file, 'w') as f:
         f.write(formatted_content)
+
+    # Replace instead of direct write to prevent empty read from hot reload in cuneus
+    os.replace(tmp_file, output_file)
 
     # print(f"Compiled {file} to {output_file}")
 

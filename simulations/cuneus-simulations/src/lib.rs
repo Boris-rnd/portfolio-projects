@@ -1,12 +1,26 @@
-pub use cuneus::egui::SliderClamping;
+// #![feature(generic_const_exprs)]
+// #![feature(vec_push_within_capacity)]
+#![allow(unused, dead_code)]
+// #![allow(incomplete_features)]
+// // Temporary code to allow static mutable references
+// #![allow(static_mut_refs)]
+// #![allow(ambiguous_glob_reexports)]
+
 pub use bytemuck::{Pod, Zeroable};
+pub use cuneus::anyhow::Result;
 pub use cuneus::compute::*;
+pub use cuneus::egui::SliderClamping;
 pub use cuneus::prelude::*;
 pub use cuneus::winit::keyboard::Key;
 pub use cuneus::winit::keyboard::KeyCode;
-pub use cuneus::{Core, RenderKit, ShaderApp, ShaderManager, UniformProvider} ;
+pub use cuneus::{Core, RenderKit, ShaderApp, ShaderManager, UniformProvider};
 
-pub fn create_compute_shader<T: bytemuck::Pod>(core: &Core, config: ComputeConfiguration, params: T, path: &str) -> ComputeShader {
+pub fn create_compute_shader<T: bytemuck::Pod>(
+    core: &Core,
+    config: ComputeConfiguration,
+    params: T,
+    path: &str,
+) -> ComputeShader {
     // Using the macro expansion to not have to recompile everytime changing the shader
     let mut config = config;
     let caller_file = file!();
@@ -24,9 +38,18 @@ pub fn create_compute_shader<T: bytemuck::Pod>(core: &Core, config: ComputeConfi
     };
     config.hot_reload_path = Some(std::path::PathBuf::from(hot_reload_path.clone()));
     #[cfg(debug_assertions)]
-    let compute_shader = ComputeShader::from_builder(core, &std::fs::read_to_string(&hot_reload_path).expect(&format!("Failed reading {hot_reload_path}")), config);
+    let compute_shader = ComputeShader::from_builder(
+        core,
+        &std::fs::read_to_string(&hot_reload_path)
+            .expect(&format!("Failed reading {hot_reload_path}")),
+        config,
+    );
     #[cfg(not(debug_assertions))]
-    let compute_shader = ComputeShader::from_builder(core, &std::fs::read_to_string(&hot_reload_path).unwrap(), config);
+    let compute_shader = ComputeShader::from_builder(
+        core,
+        &std::fs::read_to_string(&hot_reload_path).unwrap(),
+        config,
+    );
     // let compute_shader = ComputeShader::from_builder(core, include_str!(hot_reload_path), config);
     compute_shader.set_custom_params(params, &core.queue);
 

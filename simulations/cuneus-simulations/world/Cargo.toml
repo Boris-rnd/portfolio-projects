@@ -1,0 +1,11 @@
+[package]
+name = "world"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+noise = {version="0.9.0", features=["std"]}
+dot_vox = "5.2.0"
+hashbrown = {workspace=true}
+glam = {workspace=true}
+bytemuck = {workspace=true}
