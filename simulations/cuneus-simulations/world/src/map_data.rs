@@ -75,7 +75,6 @@ impl MapData {
     }
 }
 
-
 #[repr(C)]
 #[derive(Default, PartialEq, Clone, Copy, Pod, Zeroable)]
 pub struct MapDataPacked {

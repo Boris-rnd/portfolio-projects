@@ -29,3 +29,9 @@ opt-level = 3
 
 [build-dependencies]
 wesl = "0.4.0"
+
+
+[profile.flamegraph]
+inherits = "release"
+debug = true
+

@@ -151,32 +151,34 @@ fn array_array_idx_to_prefix_size(array_array_idx: u32) -> u32 {
     }
 }
 fn get_block_data(idx: MapDataID) -> MapData {
-    // if idx.array_array_idx == 0u {
-    //     return block_data0[idx.array_idx];
-    // } else if idx.array_array_idx == 1u {
-    //     return block_data1[idx.array_idx];
-    // } else if idx.array_array_idx == 2u {
-    //     return block_data2[idx.array_idx];
-    // } else {
-    //     return block_data3[idx.array_idx];
-    // }
-    return MapData(0u); //TODO
+    if idx.array_array_idx == 0u {
+        return block_data0[idx.array_idx];
+    } else if idx.array_array_idx == 1u {
+        return block_data1[idx.array_idx];
+    } else if idx.array_array_idx == 2u {
+        return block_data2[idx.array_idx];
+    } else {
+        return block_data3[idx.array_idx];
+    }
+    // return MapData(0u); //TODO
 }
 fn arrayLengthBlockData(idx: u32) -> u32 {
-    return 0; //TODO
-    // if idx == 0u {
-    //     return arrayLength(&block_data0);
-    // } else if idx == 1u {
-    //     return arrayLength(&block_data1);
-    // } else if idx == 2u {
-    //     return arrayLength(&block_data2);
-    // } else {
-    //     return arrayLength(&block_data3);
-    // }
+    // return 0; //TODO
+    if idx == 0u {
+        return arrayLength(&block_data0);
+    } else if idx == 1u {
+        return arrayLength(&block_data1);
+    } else if idx == 2u {
+        return arrayLength(&block_data2);
+    } else {
+        return arrayLength(&block_data3);
+    }
 }
 
 fn chunk_depth_to_size(depth: u32) -> u32 {
-    return u32(pow(f32(CHUNK_SIZE), f32(depth)));
+    //TODO IF CHANGE CHUNK_SIZE NEEDS UPDATE
+    return 1u << ((CHUNK_SIZE/2) * depth);
+    // return u32(pow(f32(CHUNK_SIZE), f32(depth)));
 }
 
 // Small depth = big size

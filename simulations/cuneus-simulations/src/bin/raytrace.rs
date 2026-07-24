@@ -1,8 +1,8 @@
 use cuneus::winit::{dpi::PhysicalPosition, event::ElementState};
 use cuneus_simulations::*;
-use world::{MapDataPacked, VoxelChunk};
-use glam::Vec3;
+use glam::{Vec3, uvec2};
 use log::info;
+use world::{MapDataPacked, VoxelChunk};
 
 pub const SHADER_PATH: &str = "raytrace";
 
@@ -14,7 +14,8 @@ cuneus::uniform_params! {
         camera_zoom: f32,
         fov: f32,
         root_max_depth: u32,
-        pad: [u32; 3]
+        accum_frames: u32,
+        pad: [u32; 2]
     }
 }
 impl ShaderParams {
@@ -25,7 +26,8 @@ impl ShaderParams {
             camera_zoom: 1.0,
             fov: 90.0,
             root_max_depth,
-            ..Default::default()
+            accum_frames: 0,
+            pad: Default::default(),
         }
     }
 }
@@ -46,11 +48,14 @@ struct Raytracer {
     dragging: bool,
     prev_mouse_pos: PhysicalPosition<f64>,
     move_speed: f32,
+    accum_frame_size: glam::UVec2,
 }
 
 impl ShaderManager for Raytracer {
     fn init(core: &Core) -> Self {
         let base = RenderKit::new(core);
+
+        let accum_frame_size = uvec2(800, 600);
 
         let passes = vec![
             // Update logic
@@ -63,12 +68,17 @@ impl ShaderManager for Raytracer {
         info!("Loading world...");
         let world = world::parser::load_world("shaders/sponza.vox").unwrap();
         // let mut world = world::GameWorld::new(4096, 8);
-        log::debug!("Created {} chunks, with {} block reallocations and {} pad blocks and {} chunk reallocations", world.voxel_chunks.len(), world.realloc_count, world.pad_count, world.realloc_count_chunks);
+        log::debug!(
+            "Created {} chunks, with {} block reallocations and {} pad blocks and {} chunk reallocations",
+            world.voxel_chunks.len(),
+            world.realloc_count,
+            world.pad_count,
+            world.realloc_count_chunks
+        );
         info!("Done");
         let root_max_depth = world.root_max_depth();
         let params = ShaderParams::new(root_max_depth);
 
-        
         let config = ComputeShader::builder()
             .with_label(&format!("Cuneus - {SHADER_PATH}"))
             .with_multi_pass(&passes)
@@ -94,6 +104,10 @@ impl ShaderManager for Raytracer {
                 "block_data3",
                 (world.block_data[3].len() * std::mem::size_of::<MapDataPacked>()).max(64) as u64,
             ))
+            .with_storage_buffer(StorageBufferSpec::new(
+                "accum_texture",
+                4 * (1920 * 1080) as u64,
+            )) // Make the buffer as big as possible, then we will only write to a subset
             // .with_atomic_buffer(1)
             .build();
         let compute_shader = create_compute_shader(
@@ -109,10 +123,10 @@ impl ShaderManager for Raytracer {
         );
         for i in 0..4 {
             core.queue.write_buffer(
-                &compute_shader.storage_buffers[1+i as usize],
+                &compute_shader.storage_buffers[1 + i as usize],
                 0,
                 bytemuck::cast_slice(&world.block_data[i as usize]),
-            );  
+            );
         }
         Self {
             base,
@@ -121,6 +135,7 @@ impl ShaderManager for Raytracer {
             dragging: false,
             prev_mouse_pos: PhysicalPosition::new(0., 0.),
             move_speed: 1.0,
+            accum_frame_size,
         }
     }
 
@@ -130,6 +145,7 @@ impl ShaderManager for Raytracer {
 
     fn render(&mut self, core: &Core) -> Result<(), SurfaceError> {
         let mut frame = self.base.begin_frame(core)?;
+        self.params.accum_frames += 1;
 
         // Update time and params
         let current_time = self.base.controls.get_time(&self.base.start_time);
@@ -218,13 +234,17 @@ impl ShaderManager for Raytracer {
 
     fn resize(&mut self, core: &Core) {
         self.base.default_resize(core, &mut self.compute_shader);
+        self.accum_frame_size = uvec2(core.size.width, core.size.height);
+        self.params.accum_frames = 0;
+        // self.base.compute_shader.unwrap().dispatch_stage(encoder, core, 1);
+        // self.base.compute_shader.unwrap().storage_buffers[4].
     }
 
     fn handle_input(&mut self, core: &Core, event: &winit::event::WindowEvent) -> bool {
         if self.base.default_handle_input(core, event) {
             return true;
         }
-        match event {
+        let handled = match event {
             winit::event::WindowEvent::MouseWheel { delta, .. } => {
                 // Todo zoom in and out
                 self.params.camera_zoom += match delta {
@@ -242,7 +262,11 @@ impl ShaderManager for Raytracer {
                     }
                     winit::keyboard::PhysicalKey::Code(KeyCode::KeyA) => {
                         // Right
-                        let side = glam::Vec3::new(self.params.camera_dir.z, 0.0, -self.params.camera_dir.x);
+                        let side = glam::Vec3::new(
+                            self.params.camera_dir.z,
+                            0.0,
+                            -self.params.camera_dir.x,
+                        );
                         self.params.camera_pos += side * self.move_speed;
                         true
                     }
@@ -253,7 +277,11 @@ impl ShaderManager for Raytracer {
                     }
                     winit::keyboard::PhysicalKey::Code(KeyCode::KeyD) => {
                         // Left
-                        let side = glam::Vec3::new(-self.params.camera_dir.z, 0.0, self.params.camera_dir.x);
+                        let side = glam::Vec3::new(
+                            -self.params.camera_dir.z,
+                            0.0,
+                            self.params.camera_dir.x,
+                        );
                         self.params.camera_pos += side * self.move_speed;
                         true
                     }
@@ -316,7 +344,11 @@ impl ShaderManager for Raytracer {
             }
 
             _ => false,
+        };
+        if handled {
+            self.params.accum_frames = 0;
         }
+        handled
     }
 }
 

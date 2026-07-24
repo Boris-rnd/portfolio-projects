@@ -9,7 +9,7 @@ pub struct Sphere {
     pos: Vec3,
     rad: f32,
     color: Vec3,
-    pad: f32
+    pad: f32,
 }
 
 pub fn sphere(pos: Vec3, rad: f32, color: Vec3) -> Sphere {
@@ -27,7 +27,7 @@ pub struct Box {
     min: Vec3,
     max: Vec3,
     color: Vec3,
-    pad: [f32; 3]
+    pad: [f32; 3],
 }
 
 pub fn new_box(min: Vec3, max: Vec3, color: Vec3) -> Box {
@@ -52,4 +52,3 @@ pub struct Voxel {
     pos: Vec3,
     texture_id: u32,
 }
-

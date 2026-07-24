@@ -9,7 +9,7 @@ struct Params {
     fov: f32,
     root_max_depth: u32,
     // _pad: array<u32, 3>,
-    _pad1: u32,
+    accum_frames: u32,
     _pad2: u32,
     _pad3: u32,
 };
@@ -58,6 +58,8 @@ fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
 // ----- END: libs/common.wgsl --------
 // ----- START: libs/math_utils.wgsl --------
 // Math and binary logic utilities
+const PI: f32 = 3.14159265359;
+
 fn cmple(v1: vec3<f32>, v2: vec3<f32>) -> vec3<bool> {
     return vec3(v1.x <= v2.x, v1.y <= v2.y, v1.z <= v2.z);
 }
@@ -221,17 +223,25 @@ fn reflect(v: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     return v - 2. * dot(v, n) * n;
 }
 
-// var<private> rng_seed: f32 = 1.;
+// Can't be 0
+fn random_in_unit_sphere() -> vec3<f32> {
+    // for (var i = 0; i < 5; i++) {
+    //     let p = vec3(rand(-1., 1.), rand(-1., 1.), 0.);
+    //     if dot(p, p) < 1. {
+    //         return p;
+    //     }
+    // }
+    let theta = rand(0., 2*PI);
+    let phi = acos(rand(-1., 1.));
+    let r = rand(0.0001, 1.);
 
+    let x = r*sin(theta)*cos(phi);
+    let y = r*sin(theta)*sin(phi);
+    let z = r*cos(theta);
+    return vec3(x,y,z);
+}
 fn random_unit_vector() -> vec3<f32> {
-    for (var i = 0; i < 5; i++) {
-        let p = vec3_rand(-1., 1.);
-        let lensq = dot(p, p);
-        if 1e-160 < lensq && lensq <= 1 {
-            return p / sqrt(lensq);
-        }
-    }
-    return vec3(0.);
+    return normalize(random_in_unit_sphere());
 }
 
 fn random_on_hemisphere(normal: vec3<f32>) -> vec3<f32> {
@@ -243,17 +253,38 @@ fn random_on_hemisphere(normal: vec3<f32>) -> vec3<f32> {
     }
 }
 
-
-fn random_in_unit_disk() -> vec3<f32> {
-    for (var i = 0; i < 5; i++) {
-        let p = vec3(rand(-1., 1.), rand(-1., 1.), 0.);
-        if dot(p, p) < 1. {
-            return p;
-        }
-    }
-    return vec3(0.);
-}
 // ----- END: libs/math_utils.wgsl --------
+// ----- START: libs/accum_frames.wgsl --------
+@group(3) @binding(5) var<storage, read_write> accum_frames: array<u32>;
+
+fn is_accumulating_frames() -> bool {
+    return params.accum_frames > 20;
+}
+fn accum_frames_coords_to_idx(coords: vec2<u32>) -> u32 {
+    return textureDimensions(output).x*coords.y+coords.x;
+}
+fn accum_frames_reset(coords: vec2<u32>) {
+    if (params.accum_frames==0) {
+        let idx = accum_frames_coords_to_idx(coords);
+        accum_frames[idx] = 0;
+    }
+}
+fn get_previous_color(coords: vec2<u32>) -> vec3<f32> {
+    let idx = accum_frames_coords_to_idx(coords);
+    let r = f32(accum_frames[idx]&0xFF)/255.;
+    let g = f32((accum_frames[idx]>>8)&0xFF)/255.;
+    let b = f32((accum_frames[idx]>>16)&0xFF)/255.;
+    return vec3(r,g,b);
+}
+fn set_previous_color(coords: vec2<u32>, color: vec3<f32>) {
+    let idx = accum_frames_coords_to_idx(coords);
+    let r = u32(color.r*255.)&0xFF;
+    let g = u32(color.g*255.)&0xFF;
+    let b = u32(color.b*255.)&0xFF;
+    let compacted = r | (g<<8) | (b<<16);
+    accum_frames[idx] = compacted;
+}
+// ----- END: libs/accum_frames.wgsl --------
 // ----- START: libs/raytrace_utils.wgsl --------
 // Raytrace utility functions
 
@@ -279,7 +310,7 @@ fn ray_t_from_pos(ray: Ray, pos: vec3<f32>) -> f32 {
         return (pos.z - ray.orig.z) / ray.dir.z;
     }
 }
-// If t==1e30, then hit record is invalid
+// If t==INVALID_BOX_HIT, then hit record is invalid
 struct HitRecord {
     p: vec3<f32>,
     normal: vec3<f32>,
@@ -290,12 +321,11 @@ fn valid_rec(color: vec3<f32>) -> HitRecord {
     return HitRecord(vec3(0.), vec3(0.), 0., color);
 }
 fn invalid_rec() -> HitRecord {
-    return HitRecord(vec3(0.), vec3(0.), 1e30, vec3(0.));
+    return HitRecord(vec3(0.), vec3(0.), INVALID_BOX_HIT, vec3(0.));
 }
 fn to_far_away_rec() -> HitRecord {
-    return HitRecord(vec3(1.), vec3(0.), 1e30, vec3(0.));
+    return HitRecord(vec3(0.), vec3(0.), BOX_NO_HIT, vec3(0.));
 }
-
 
 // fn local_pos(chunk: VoxelChunk) -> u32 {
 //     // Returns the local position of the chunk in the world
@@ -315,11 +345,12 @@ fn hit_sphere(center: vec3<f32>, radius: f32, r: Ray) -> bool {
     let oc = center - r.orig;
     let a = dot(r.dir, r.dir);
     let b = -2.0 * dot(r.dir, oc);
-    let c = dot(oc, oc) - radius*radius;
-    let discriminant = b*b - 4*a*c;
+    let c = dot(oc, oc) - radius * radius;
+    let discriminant = b * b - 4 * a * c;
     return (discriminant >= 0);
 }
-const INVALID_BOX_HIT: f32 = 3*10e10;
+const INVALID_BOX_HIT: f32 = 1e30;
+const BOX_NO_HIT: f32 = 3 * 10e10;
 fn hit_box_t(ray: Ray, bmin: vec3<f32>, bmax: vec3<f32>) -> f32 {
     let t135 = (bmax - ray.orig) / ray.dir;
     let t246 = (bmin - ray.orig) / ray.dir;
@@ -328,15 +359,37 @@ fn hit_box_t(ray: Ray, bmin: vec3<f32>, bmax: vec3<f32>) -> f32 {
     let tmax = min(min(max(t135.x, t246.x), max(t135.y, t246.y)), max(t135.z, t246.z));
 
     if tmin > tmax || tmax < 0 {
-        return INVALID_BOX_HIT;
+        return BOX_NO_HIT;
     }
     return tmin;
+}
+// I used AI for this sry
+fn hit_box_t_rotated(ray: Ray, bmin: vec3<f32>, bmax: vec3<f32>, rotation: vec3<f32>) -> f32 {
+    // 1. Build the 3x3 rotation matrix from Euler angles (XYZ order)
+    let c = cos(rotation);
+    let s = sin(rotation);
+
+    let m = mat3x3<f32>(
+        vec3<f32>(c.y * c.z, c.y * s.z, -s.y),                                          // Column 0 (X axis)
+        vec3<f32>(s.x * s.y * c.z - c.x * s.z, s.x * s.y * s.z + c.x * c.z, s.x * c.y), // Column 1 (Y axis)
+        vec3<f32>(c.x * s.y * c.z + s.x * s.z, c.x * s.y * s.z - s.x * c.z, c.x * c.y)// Column 2 (Z axis)
+    );
+
+    // 2. Transform the ray into the box's local space
+    // To rotate a ray, we rotate its direction and origin.
+    // (Note: This assumes the box is centered at the origin. If it has a position,
+    // subtract it from ray.orig before multiplying by the transpose).
+    let local_dir = m * ray.dir;
+    let local_orig = m * ray.orig;
+
+    // 3. Create a local ray and use the fast AABB intersection
+    let local_ray = Ray(local_orig, local_dir); // Adjust this to match your Ray struct constructor
+    return hit_box_t(local_ray, bmin, bmax);
 }
 fn sdBox(p: vec3<f32>, b: vec3<f32>) -> f32 {
     let q = abs(p) - b;
     return length(max(q, vec3(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
 }
-
 
 fn set_face_normal(ray: Ray, outward_normal: vec3<f32>, r: HitRecord) -> HitRecord {
     var rec = r;
@@ -347,7 +400,6 @@ fn set_face_normal(ray: Ray, outward_normal: vec3<f32>, r: HitRecord) -> HitReco
     }
     return rec;
 }
-
 
 // struct DDAResult {
 //     sideDist: vec3<f32>,
@@ -380,20 +432,13 @@ fn set_face_normal(ray: Ray, outward_normal: vec3<f32>, r: HitRecord) -> HitReco
 //     return res;
 // }
 
-
-
-// fn is_accumulating_frames() -> bool {
-//     return cam.accum_frames > 20;
-// }
-
-
 // Better tone mapping function
 fn reinhard_tone_map(color: vec3<f32>) -> vec3<f32> {
     // Extended Reinhard tone mapping
     let white_point = 2.0;
     let numerator = color * (1.0 + color / (white_point * white_point));
     let denominator = 1.0 + color;
-    
+
     // Apply gamma correction
     return pow(numerator / denominator, vec3(1.0 / 2.2));
 }
@@ -402,7 +447,50 @@ fn skybox(ray_dir: vec3<f32>) -> vec3<f32> {
     var c = (1.0 - a) * vec3(1.0, 1.0, 1.0) + a * vec3(0.5, 0.7, 1.0);
     return c;
 }
+struct NormalAndUv {
+    normal: vec3<f32>,
+    uv: vec2<f32>
+}
+fn compute_normal_and_uv(point: vec3<f32>, center: vec3<f32>) -> NormalAndUv {
+    // Vector from center to point (points outward)
+    var local_normal = point - center;
+    var normal = vec3(0.);
+    var uv = vec2(0.);
 
+    // Find the dominant axis
+    if local_normal.x > abs(local_normal.y) && local_normal.x > abs(local_normal.z) { 
+        uv = local_normal.zy; 
+        normal = vec3(1.0, 0.0, 0.0); 
+    } 
+    else if local_normal.x < -abs(local_normal.y) && local_normal.x < -abs(local_normal.z) { 
+        uv = local_normal.zy; 
+        normal = vec3(-1.0, 0.0, 0.0); 
+    } 
+    else if local_normal.z > abs(local_normal.y) && local_normal.z > abs(local_normal.x) { 
+        uv = local_normal.xy; 
+        normal = vec3(0.0, 0.0, 1.0); 
+    } 
+    else if local_normal.z < -abs(local_normal.y) && local_normal.z < -abs(local_normal.x) { 
+        uv = local_normal.xy; 
+        normal = vec3(0.0, 0.0, -1.0); 
+    } 
+    else if local_normal.y > abs(local_normal.x) && local_normal.y > abs(local_normal.z) { 
+        // Top face (flip Z for correct UV orientation)
+        uv = vec2(local_normal.x, -local_normal.z); 
+        normal = vec3(0.0, 1.0, 0.0);
+    } 
+    else if local_normal.y < -abs(local_normal.x) && local_normal.y < -abs(local_normal.z) { 
+        // Bottom face
+        uv = local_normal.xz; 
+        normal = vec3(0.0, -1.0, 0.0); 
+    } 
+    else { 
+        // Fallback (should rarely happen, but good for safety)
+        normal = vec3(1.0, 1.5, 1.0); 
+    } 
+
+    return NormalAndUv(normal, uv);
+}
 
 struct Box {
     min: vec3<f32>,
@@ -414,41 +502,25 @@ fn hit_box_gen(ray: Ray, box: Box, chunk_idx: u32, chunk: VoxelChunk) -> HitReco
 
     var t = hit_box_t(ray, box.min, box.max);
     if t == INVALID_BOX_HIT {
-        
+
         return valid_rec(vec3(1., 0., 0.)); // No hit
     }
     res.t = t;
     res.p = at(ray, t);
     let center = (box.min + box.max) / 2.;
-    
-    var uv: vec2<f32>;
+
     var data: u32 = box.texture_id;
     var light_intensity = vec3(1.);
-    var circle_normal = center - res.p;
-    var n = normalize(circle_normal);
-    var abs_n = abs(n);
 
-    // if abs_n.x >= abs_n.y && abs_n.x >= abs_n.z {
-    //     circle_normal = vec3(sign(n.x), 0.0, 0.0);
-    //     uv = res.p.zy;
-    // } else if abs_n.y >= abs_n.x && abs_n.y >= abs_n.z {
-    //     circle_normal = vec3(0.0, sign(n.y), 0.0);
-    //     uv = res.p.xz;
-    // } else {
-    //     circle_normal = vec3(0.0, 0.0, sign(n.z));
-    //     uv = res.p.xy;
-    // }
-    if circle_normal.x > abs(circle_normal.y) && circle_normal.x > abs(circle_normal.z) { uv = (circle_normal).zy; circle_normal = vec3(1., 0., 0.); } else if circle_normal.x < -abs(circle_normal.y) && circle_normal.x < -abs(circle_normal.z) { uv = (circle_normal).zy; circle_normal = vec3(-1., 0., 0.); } else if circle_normal.z > abs(circle_normal.y) && circle_normal.z > abs(circle_normal.x) { uv = (circle_normal).xy; circle_normal = vec3(0., 0., 1.); } else if circle_normal.z < -abs(circle_normal.y) && circle_normal.z < -abs(circle_normal.x) { uv = (circle_normal).xy; circle_normal = vec3(0., 0., -1.); } else if (circle_normal.y) > abs(circle_normal.x) && (circle_normal.y) > abs(circle_normal.z) { // Bottom face 
-        uv = (circle_normal).xz; circle_normal = vec3(0., 1., 0.); } else if circle_normal.y < -abs(circle_normal.x) && circle_normal.y < -abs(circle_normal.z) { uv = (circle_normal).xz; circle_normal = vec3(0., -1., 0.); } else { circle_normal = vec3(1., 1.5, 1.); } res.normal = circle_normal;
-
-    res.normal = circle_normal;
+    let normal_uv = compute_normal_and_uv(res.p, center);
+    res.normal = normal_uv.normal;
     res.t = t;
     // data = data%7;
     let r = data & 0xFF;
     let g = (data >> 8) & 0xFF;
     let b = (data >> 16) & 0xFF;
     let metallic = (data >> 24) & 1;
-    res.color = vec3(f32(r) / 255., f32(g) / 255., f32(b) / 255.)*light_intensity;
+    res.color = vec3(f32(r) / 255., f32(g) / 255., f32(b) / 255.) * light_intensity;
     // if data > 5 {
     //     res.color = vec3(f32(data) / 255., f32(data) / 255., f32(data) / 255.);
     // } else {
@@ -463,6 +535,126 @@ fn hit_box_gen(ray: Ray, box: Box, chunk_idx: u32, chunk: VoxelChunk) -> HitReco
     return res;
 }
 
+fn hit_voxel(ray: Ray) -> HitRecord {
+    var miss = to_far_away_rec();
+
+    // Initialise ray inside root chunk
+    var posf = ray.orig;
+    let world_min = vec3<f32>(0.0);
+    let world_max = vec3<f32>(f32(root_chunk_size()));
+    if all(ray.orig > world_min) && all(ray.orig < world_max) {
+        posf = ray.orig;
+    } else {
+
+        var t = hit_box_t(ray, world_min, world_max);
+        if t == BOX_NO_HIT {
+            return miss;
+        }
+        posf = at(ray, t + 1e-3);
+        // return HitRecord(vec3(0.), vec3(0.), t, vec3(0.));
+    }
+
+    // Optimization: pre-calculate step directions
+    let ray_step = vec3<i32>(select(vec3(-1), vec3(1), ray.dir >= vec3(0.)));
+
+    // Setup stacks for the descent of sparse tree
+    var curr_chunks = array<VoxelChunk, 6>();
+    var parent_pos_stack: array<vec3<i32>, 7>;
+
+    parent_pos_stack[0] = vec3<i32>(0);
+    var curr_depth = 1u;
+    var curr_chunks_len = 1u;
+    curr_chunks[0] = voxel_chunks[0];
+    var chunk_size = root_chunk_size();
+
+    // Main traversal
+    var stepf = sign(ray.dir);
+    let rcp = 1. / ray.dir;
+
+    // Hard cap to avoid infinite loops
+    var max_iter = 500;
+    // if is_accumulating_frames() == true {
+    //     max_iter = 1000;
+    // }
+    var iter = 0;
+    for (; iter < max_iter; iter = iter + 1) {
+        let posi = vec3<i32>(posf);
+        let parent_pos = parent_pos_stack[curr_depth - 1u];
+        let child_size_i = i32(depth_to_chunk_size(curr_depth));
+        let local_pos = (posi - parent_pos) / vec3(child_size_i); // changed from div_euclid_v3... Doesn't seem to change anything
+        // let local_pos = div_euclid_v3((posi - parent_pos), vec3(child_size_i));
+        // Check if outside of current chunk
+        if any((posi - parent_pos) < vec3(0)) || any(local_pos >= vec3(i32(CHUNK_SIZE))) {
+            // Outside of previous chunk, if curr_depth==1, then outside of root chunk so won't hit anything else
+            if curr_depth == 1u {
+                break;
+            }
+            // Ascent
+            curr_depth -= 1u;
+            curr_chunks_len -= 1u;
+            continue;
+        }
+
+        var chunk_idx = u32(local_pos.x) | (u32(local_pos.y) << CHUNK_SHIFT) | (u32(local_pos.z) << (CHUNK_SHIFT * 2));
+        // Checks if bit is set, if so computes the idx, else returns U32::MAX (which will be bigger than arrayLength)
+        let map_data_idx = get_data_idx_in_chunk(curr_chunks[curr_chunks_len - 1u], chunk_idx);
+        if map_data_idx.array_idx < arrayLengthBlockData(map_data_idx.array_array_idx) {
+            let curr_data = get_block_data_follow_tails(map_data_idx);
+            if curr_data == 4294967295u { // Never happens but maybe one day i'll introduce a breaking bug
+                return valid_rec(vec3(1., 0., 1.));
+            }
+            // let curr_data = get_block_data(MapDataID(map_data_idx.array_array_idx, map_data_idx.array_idx)).data;
+
+            let ty = curr_data & 3u;
+            if ty == 1u { // Chunk, so we descend into it
+                if iter>100 {
+                    return valid_rec(vec3(1., 1., 0.));
+                }
+                parent_pos_stack[curr_depth] = parent_pos + vec3<i32>(
+                    local_pos.x * child_size_i,
+                    local_pos.y * child_size_i,
+                    local_pos.z * child_size_i
+                );
+                curr_chunks[curr_chunks_len] = voxel_chunks[curr_data >> 2];
+                curr_chunks_len += 1u;
+                curr_depth += 1u;
+                continue; // IMPORTANT: re-evaluate at new depth
+            } else if ty == 2u { // Block
+                var res = hit_box_gen(ray, Box(vec3<f32>(posi), vec3<f32>(posi) + vec3(1.0), u32(curr_data >> 2)), chunk_idx, curr_chunks[curr_chunks_len - 1]);
+                // res = edge_chunk_shadows(res, chunk_idx, curr_chunks[curr_chunks_len-1], curr_chunks[curr_chunks_len-2]);
+                return res; // making posi = 0 and rb 10000 is fun
+            }
+        }
+        // Should be useless check but I like to keep it
+        // Check if we have found something
+        if map_data_idx.array_array_idx != 4294967295u {
+            return valid_rec(vec3(0., 1., 1.));
+        }
+        let S = f32(child_size_i);
+        let world_pos_in_parent = posf - vec3<f32>(parent_pos);
+
+        // handle zeros
+        let inf = 1e30;
+        let idxf = floor(world_pos_in_parent / S);
+        let next = select(idxf * S, (idxf + vec3(1.)) * S, stepf > vec3(0.));
+        var tMax = (next - world_pos_in_parent) * rcp;
+        let tStep = min(tMax.x, min(tMax.y, tMax.z));
+        if !(tStep < inf) {
+            return valid_rec(vec3(1., 0., 1.));
+        }
+        
+
+        // nudge with scale-aware epsilon
+        let eps = (1e-3 * S) * (1. + f32(iter) / 10.);
+        // let eps = (1e-4 * f32(child_size_i));
+        posf += ray.dir * (tStep + eps);
+    }
+    if iter >= max_iter {
+        return to_far_away_rec();
+    }
+    // return valid_rec(vec3(0., 0., f32(iter)/500.));
+    return miss;
+}
 // ----- END: libs/raytrace_utils.wgsl --------
 // ----- START: libs/voxel_utils.wgsl --------
 // Utilities around voxels and world data handling
@@ -618,32 +810,34 @@ fn array_array_idx_to_prefix_size(array_array_idx: u32) -> u32 {
     }
 }
 fn get_block_data(idx: MapDataID) -> MapData {
-    // if idx.array_array_idx == 0u {
-    //     return block_data0[idx.array_idx];
-    // } else if idx.array_array_idx == 1u {
-    //     return block_data1[idx.array_idx];
-    // } else if idx.array_array_idx == 2u {
-    //     return block_data2[idx.array_idx];
-    // } else {
-    //     return block_data3[idx.array_idx];
-    // }
-    return MapData(0u); //TODO
+    if idx.array_array_idx == 0u {
+        return block_data0[idx.array_idx];
+    } else if idx.array_array_idx == 1u {
+        return block_data1[idx.array_idx];
+    } else if idx.array_array_idx == 2u {
+        return block_data2[idx.array_idx];
+    } else {
+        return block_data3[idx.array_idx];
+    }
+    // return MapData(0u); //TODO
 }
 fn arrayLengthBlockData(idx: u32) -> u32 {
-    return 0; //TODO
-    // if idx == 0u {
-    //     return arrayLength(&block_data0);
-    // } else if idx == 1u {
-    //     return arrayLength(&block_data1);
-    // } else if idx == 2u {
-    //     return arrayLength(&block_data2);
-    // } else {
-    //     return arrayLength(&block_data3);
-    // }
+    // return 0; //TODO
+    if idx == 0u {
+        return arrayLength(&block_data0);
+    } else if idx == 1u {
+        return arrayLength(&block_data1);
+    } else if idx == 2u {
+        return arrayLength(&block_data2);
+    } else {
+        return arrayLength(&block_data3);
+    }
 }
 
 fn chunk_depth_to_size(depth: u32) -> u32 {
-    return u32(pow(f32(CHUNK_SIZE), f32(depth)));
+    //TODO IF CHANGE CHUNK_SIZE NEEDS UPDATE
+    return 1u << ((CHUNK_SIZE/2) * depth);
+    // return u32(pow(f32(CHUNK_SIZE), f32(depth)));
 }
 
 // Small depth = big size
@@ -669,146 +863,62 @@ fn root_chunk_size() -> u32 {
 @group(3) @binding(4) var<storage, read_write> block_data3: array<MapData>;
 
 
-fn prev_hit(ray: Ray) -> HitRecord {
-    var miss = invalid_rec();
-    
-    // Initialise ray inside root chunk
-    var posf = ray.orig;
-    let world_min = vec3<f32>(0.0);
-    let world_max = vec3<f32>(f32(root_chunk_size()));
-    if all(ray.orig > world_min) && all(ray.orig < world_max) {
-        posf = ray.orig;
-    } else {
-
-        var t = hit_box_t(ray, world_min, world_max);
-        if t == INVALID_BOX_HIT {
-            return miss;
-        }
-        posf = at(ray, t + 1e-3);
-        return HitRecord(vec3(0.), vec3(0.), t, vec3(0.));
-    }
-
-    // Setup stacks for the descent of sparse tree
-    var curr_chunks = array<VoxelChunk, 6>();
-    var parent_pos_stack: array<vec3<i32>, 7>;
-
-    parent_pos_stack[0] = vec3<i32>(0);
-    var curr_depth = 1u;
-    var curr_chunks_len = 1u;
-    curr_chunks[0] = voxel_chunks[0];
-    var chunk_size = root_chunk_size();
-    
-    // Main traversal
-    var stepf = sign(ray.dir);
-    let rcp = 1. / ray.dir;
 
 
+fn ray_color(r2: Ray) -> vec3<f32> {
+    var r = r2;
+    var out_c = vec3(0.);
 
-
-    // Hard cap to avoid infinite loops
-    var max_iter = 500;
-    // if is_accumulating_frames() == true {
-    //     max_iter = 1000;
-    // }
-    var iter = 0;
-    for (; iter < max_iter; iter = iter + 1) {
-        let posi = vec3<i32>(posf);
-        let parent_pos = parent_pos_stack[curr_depth - 1u];
-        let child_size_i = i32(depth_to_chunk_size(curr_depth));
-        let local_pos = div_euclid_v3(posi - parent_pos, vec3(child_size_i));
-        // Check if outside of current chunk
-        if any((posi - parent_pos) < vec3(0)) || any(local_pos >= vec3(i32(CHUNK_SIZE))) {
-            // Outside of previous chunk, if curr_depth==1, then outside of root chunk so won't hit anything else
-            if curr_depth == 1u {
-                break;
-            }
-            // Ascent
-            curr_depth -= 1u;
-            curr_chunks_len -= 1u;
-            continue;
-        }
-
-        var chunk_idx = u32(local_pos.x) | (u32(local_pos.y) << CHUNK_SHIFT) | (u32(local_pos.z) << (CHUNK_SHIFT * 2));
-        // Checks if bit is set, if so computes the idx, else returns U32::MAX (which will be bigger than arrayLength)
-        let map_data_idx = get_data_idx_in_chunk(curr_chunks[curr_chunks_len - 1u], chunk_idx);
-        if map_data_idx.array_idx < arrayLengthBlockData(map_data_idx.array_array_idx) {
-            let curr_data = get_block_data_follow_tails(map_data_idx);
-            if curr_data == 4294967295u { // Never happens but maybe one day i'll introduce a breaking bug
-                return valid_rec(vec3(1., 0., 1.));
-            }
-            // let curr_data = get_block_data(MapDataID(map_data_idx.array_array_idx, map_data_idx.array_idx)).data;
-
-            let ty = curr_data & 3u;
-            if ty == 1u { // Chunk, so we descend into it
-                parent_pos_stack[curr_depth] = parent_pos + vec3<i32>(
-                    local_pos.x * child_size_i,
-                    local_pos.y * child_size_i,
-                    local_pos.z * child_size_i
-                );
-                curr_chunks[curr_chunks_len] = voxel_chunks[curr_data >> 2];
-                curr_chunks_len += 1u;
-                curr_depth += 1u;
-                continue; // IMPORTANT: re-evaluate at new depth
-            } else if ty == 2u { // Block
-                var res = hit_box_gen(ray, Box(vec3<f32>(posi), vec3<f32>(posi) + vec3(1.0), u32(curr_data >> 2)), chunk_idx, curr_chunks[curr_chunks_len-1]);
-                // res = edge_chunk_shadows(res, chunk_idx, curr_chunks[curr_chunks_len-1], curr_chunks[curr_chunks_len-2]);
-                return res; // making posi = 0 and rb 10000 is fun
-            }
-        }
-        // Should be useless check but I like to keep it
-        // Check if we have found something
-        if map_data_idx.array_array_idx != 4294967295u {
-            return valid_rec(vec3(0., 1., 1.));
-        }
-        let S = f32(child_size_i);
-        let world_pos_in_parent = posf - vec3<f32>(parent_pos);
-
-        // handle zeros
-        let inf = 1e30;
-        let idxf = floor(world_pos_in_parent / S);
-        let next = select(idxf * S, (idxf + vec3(1.)) * S, stepf > vec3(0.));
-        var tMax = (next - world_pos_in_parent) * rcp;
-        let tStep = min(tMax.x, min(tMax.y, tMax.z));
-        if !(tStep < inf) {
-            return valid_rec(vec3(1., 0., 1.));
-        }
-
-        // nudge with scale-aware epsilon
-        let eps = (1e-3 * S)*(1. + f32(iter)/100.);
-        posf += ray.dir * (tStep + eps);
-    }
-    if iter >= max_iter {
-        return to_far_away_rec();
-    }
-    // return valid_rec(vec3(0., 0., f32(iter)/500.));
-    return miss;
-}
-
-
-fn ray_color(r: Ray) -> vec3<f32> {
-    var res = prev_hit(r);
-
-    if (res.t == 1e30) {
-        if all(res.p == vec3(1., 1., 1.)) {
-            return vec3(1., 0., 0.); // Error color
-        }
-    } else {
-        let s = u32(at(r, res.t).x/2.) + u32(at(r, res.t).y/2.)*10000000 + u32(at(r, res.t).z/2.)*10;
-        let x = wang_random_f32(s);
-        let y = wang_random_f32(s+1);
-        let z = wang_random_f32(s+2);
-        return vec3(x, y, z);
-    }
-
-    if (hit_sphere(vec3(0.,0.,1.), 0.5, r)) {
-        return vec3(1., 0., 0.);   
-    }
-    let res_box = hit_box_t(r, vec3(-1., -1., -1.), vec3(1., 1., 1.));
-    if (res_box != INVALID_BOX_HIT) {
+    // TODO: Beam splitter
+    let res_box = hit_box_t_rotated(r, vec3(10., 30., 1.), vec3(-40., 80., 400.), vec3(0., 0., degrees_to_radians(-45.)));
+    if (res_box != BOX_NO_HIT) {
         let inter_point = r.orig + res_box * r.dir;
-        return vec3(100., 1., 1.) - inter_point;
+        r.orig = inter_point;
+        r.dir.x *= 10.1;
+        // r.dir.y += wang_random_f32(u32(res_box));
+        r.dir = normalize(r.dir);
+        // return vec3(100., 1., 1.) - inter_point;
     }
-    return skybox(r.dir);
+
+    // First hit (main voxel at screen)
+    var res = hit_voxel(r);
+    if (res.t == BOX_NO_HIT) { // Not found
+        if all(res.p == vec3(1.)) {
+            return vec3(1., 0., 1.); // Error color
+        }
+        return skybox(r.dir);
+    } 
+    // else{return res.normal;}
+    out_c = res.color;
+    r.orig = at(r, res.t)+res.normal*0.01;
+    let sun_hit = hit_voxel(Ray(r.orig, normalize(vec3(0.1, 0.91141, 0.1141))));
+
+    let dir = r.dir+random_unit_vector()*0.5;
+    r.dir = normalize(dir);
+    
+    var bounces = 1;
+    if is_accumulating_frames() {bounces = 4;}
+    // else {return out_c;}
+    for (var b =1;b<bounces;b++) {
+        var res = hit_voxel(r);
+    
+        if (res.t == BOX_NO_HIT) { // Not found
+            break;
+        }
+        out_c *= res.color;
+        // out_c = (out_c*f32(b)+res.color)/f32(b+1);
+        r.orig = at(r, res.t)+res.normal*0.01;
+        let dir = reflect(r.dir, res.normal)+random_on_hemisphere(res.normal)*0.5;
+        r.dir = dir;
+    }
+    if sun_hit.t != BOX_NO_HIT { // No hit => light
+        out_c *= 0.5;
+    }
+
+    // if (hit_sphere(vec3(0.,0.,1.), 0.5, r)) {
+    //     return vec3(1., 0., 0.);   
+    // }
+    return out_c; // Idk why but using reinhard_tone_map makes everything much slower
 }
 
 @compute @workgroup_size(16, 16)
@@ -817,6 +927,7 @@ fn render(@builtin(global_invocation_id) id: vec3<u32>) {
     if (id.x >= udims.x || id.y >= udims.y) {return;}
     init_rng(id.xy, time_data.frame, u32(params.camera_pos_x));
     let dims = vec2<f32>(udims);
+    accum_frames_reset(id.xy);
     var uv = (vec2<f32>(id.xy)/dims-vec2(0.5))*dims*2.;
     uv.y = -uv.y;
     var col = vec3<f32>(0.0);
@@ -853,13 +964,21 @@ fn render(@builtin(global_invocation_id) id: vec3<u32>) {
     let defocus_disk_v = v * defocus_radius;
 
     let focus = false;
-    var samples_per_pixel = 2;
+    var samples_per_pixel = 1;
+    if is_accumulating_frames() {samples_per_pixel = 2;}
 
     for (var i = 0; i<samples_per_pixel; i++) {
-        let pixel_center = pixel00_loc + ((uv.x+(f32(i))/(f32(samples_per_pixel)/2)) * pixel_delta_u) + ((uv.y+(f32(i)/(f32(samples_per_pixel)/2))) * pixel_delta_v);
+        let offset = vec2((f32(i))/(f32(samples_per_pixel)/2));
+        // let offset = vec2(rand(-0.5, 0.5), rand(-0.5, 0.5))*0.1;
+        let pixel_center = pixel00_loc + (uv.x+offset.x) * pixel_delta_u + (uv.y+offset.y) * pixel_delta_v;
         let ray_dir = normalize(pixel_center - lookfrom);
         col += ray_color(Ray(lookfrom, ray_dir))/f32(samples_per_pixel);
     }
-    
+
+    if is_accumulating_frames() {
+        let prev = get_previous_color(id.xy);
+        col = (col+prev*f32(params.accum_frames-20))/f32(params.accum_frames-19);
+    }
     textureStore(output, id.xy, vec4<f32>(col, 1.0));
+    set_previous_color(id.xy, col);
 }

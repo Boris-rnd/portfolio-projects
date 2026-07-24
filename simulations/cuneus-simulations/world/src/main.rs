@@ -16,9 +16,9 @@ fn main() {
     // println!("Realloc count: {} \t Realloc count chunks: {}\n Mem usage: {} MB", &prev_world.realloc_count, &prev_world.realloc_count_chunks, prev_world.block_data.len()*std::mem::size_of::<MapData>()/1024/1024);
     // println!("Took {:?} to run", start.elapsed());
     // println!("-----\n");
-    
+
     let start = std::time::Instant::now();
-    gen_world();
+    let world = world::parser::load_world("shaders/sponza.vox").unwrap();
     println!("Took {:?} to run", start.elapsed());
     println!("-----\n");
 }

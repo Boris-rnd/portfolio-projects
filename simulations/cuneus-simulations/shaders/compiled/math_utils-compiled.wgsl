@@ -1,4 +1,6 @@
 // Math and binary logic utilities
+const PI: f32 = 3.14159265359;
+
 fn cmple(v1: vec3<f32>, v2: vec3<f32>) -> vec3<bool> {
     return vec3(v1.x <= v2.x, v1.y <= v2.y, v1.z <= v2.z);
 }
@@ -162,17 +164,25 @@ fn reflect(v: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     return v - 2. * dot(v, n) * n;
 }
 
-// var<private> rng_seed: f32 = 1.;
+// Can't be 0
+fn random_in_unit_sphere() -> vec3<f32> {
+    // for (var i = 0; i < 5; i++) {
+    //     let p = vec3(rand(-1., 1.), rand(-1., 1.), 0.);
+    //     if dot(p, p) < 1. {
+    //         return p;
+    //     }
+    // }
+    let theta = rand(0., 2*PI);
+    let phi = acos(rand(-1., 1.));
+    let r = rand(0.0001, 1.);
 
+    let x = r*sin(theta)*cos(phi);
+    let y = r*sin(theta)*sin(phi);
+    let z = r*cos(theta);
+    return vec3(x,y,z);
+}
 fn random_unit_vector() -> vec3<f32> {
-    for (var i = 0; i < 5; i++) {
-        let p = vec3_rand(-1., 1.);
-        let lensq = dot(p, p);
-        if 1e-160 < lensq && lensq <= 1 {
-            return p / sqrt(lensq);
-        }
-    }
-    return vec3(0.);
+    return normalize(random_in_unit_sphere());
 }
 
 fn random_on_hemisphere(normal: vec3<f32>) -> vec3<f32> {
@@ -182,15 +192,4 @@ fn random_on_hemisphere(normal: vec3<f32>) -> vec3<f32> {
     } else {
         return -on_unit_sphere;
     }
-}
-
-
-fn random_in_unit_disk() -> vec3<f32> {
-    for (var i = 0; i < 5; i++) {
-        let p = vec3(rand(-1., 1.), rand(-1., 1.), 0.);
-        if dot(p, p) < 1. {
-            return p;
-        }
-    }
-    return vec3(0.);
 }
