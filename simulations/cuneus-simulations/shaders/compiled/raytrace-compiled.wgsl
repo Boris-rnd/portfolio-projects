@@ -785,9 +785,6 @@ fn ray_hit(r2: Ray, beam: bool) -> HitRecord {
         out_c *= 0.5;
     }
 
-    // if (hit_sphere(vec3(0.,0.,1.), 0.5, r)) {
-    //     return vec3(1., 0., 0.);   
-    // }
     return valid_rec(out_c); // Idk why but using reinhard_tone_map makes everything much slower
 }
 
@@ -800,7 +797,7 @@ fn ray_color(r2: Ray) -> vec3<f32> {
 }
 
 fn ray_depth(r2: Ray) -> f32 {
-    return ray_hit(r2, true).t;
+    return hit_voxel(r2).t;
 }
 
 
@@ -1089,7 +1086,7 @@ fn render(@builtin(global_invocation_id) id: vec3<u32>) {
         if (prev_depth>0.0 && prev_depth<1e29) {
             r.orig = at(r, prev_depth-0.01);
             // col = vec3(prev_depth/100., prev_depth/1000., prev_depth/10000.);
-            break;
+            // break;
         } else  {
             col += skybox(r.dir);
             break;

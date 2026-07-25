@@ -99,39 +99,9 @@ fn iterate_vox_tree_inner(
 pub fn load_world(path: &str) -> Result<GameWorld> {
     let vox_tree = dot_vox::load(path).map_err(|e| anyhow::anyhow!(e))?;
 
-    // let mut global_min = Vec3::ZERO;
-    // let mut global_max = Vec3::ZERO;
-
-    // iterate_vox_tree(&vox_tree, |model, position, orientation| {
-    //     //conversion to Vec3<i32> is required, because orientation might negate the
-    //     // sign of the size components
-    //     let model_size = Mat3::from_cols_array_2d(&orientation.to_cols_array_2d())
-    //         * vec3(
-    //             model.size.x as f32,
-    //             model.size.y as f32,
-    //             model.size.z as f32,
-    //         );
-    //     let min = *position - (model_size / 2.);
-    //     let max = model_size + min;
-    //     global_min = global_min.min(min);
-    //     global_max = global_max.max(max);
-    //     // dbg!(model.size, model.voxels.len());
-    //     // model.voxels.iter().for_each(|voxel| {
-    //     //     let local_pos = vec3(
-    //     //         voxel.x as f32 - (model.size.x as f32) / 2.,
-    //     //         voxel.y as f32 - (model.size.y as f32) / 2.,
-    //     //         voxel.z as f32 - (model.size.z as f32) / 2.,
-    //     //     );
-    //     //     // let rotated_pos = orientation * local_pos;
-    //     //     let world_pos = local_pos + *position;
-    //     //     // dbg!(local_pos, rotated_pos, world_pos);
-    //     // });
-    // });
-    // println!("Global min: {:?} \t Global max: {:?}", global_min, global_max);
-    // let global_size = global_max - global_min;
-    // println!("Relative: {:?}", global_size);
     let mut world = GameWorld::new(4096, 8);
 
+    let mut voxels: hashbrown::HashMap<IVec3, u32> = Default::default();
     iterate_vox_tree(&vox_tree, |model, position, orientation| {
         let rotation_mat = Mat3::from_cols_array_2d(&orientation.to_cols_array_2d());
 
@@ -160,8 +130,27 @@ pub fn load_world(path: &str) -> Result<GameWorld> {
             {
                 continue;
             }
-            world.set_block(pos, MapData::Block(col));
+            voxels.insert(pos, col);
+            // world.set_block(pos, MapData::Block(col));
         }
+        for (pos, voxel) in &voxels.clone() {
+            if voxels.get(pos).is_none(){continue;}
+            // Create recursively all necessary parent chunks
+            let (_, chunk) = world.set_block(*pos, MapData::Block(*voxel)).unwrap();
+            let chunk_pos = pos.div_euclid(IVec3::splat(4))*4;
+            for lx in 0..CHUNK_SIZE as i32 {
+                for ly in 0..CHUNK_SIZE as i32 {
+                    for lz in 0..CHUNK_SIZE as i32 {
+                        let global_pos = ivec3(lx, ly, lz)+chunk_pos;
+                        if let Some(v) = voxels.get(&global_pos) {
+                            world.set_data_in_chunk(chunk, LocalPos::new(lx as _, ly as _, lz as _), MapData::Block(*v));
+                            voxels.remove(&global_pos);
+                        }
+                    }
+                }
+            }
+        }
+
     });
 
     // Iterate over all models inside the vox file

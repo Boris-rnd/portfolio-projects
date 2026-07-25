@@ -63,7 +63,7 @@ impl GameWorld {
         }
     }
 
-    fn block_iter_inner(&mut self, pos: IVec3, map_data: Option<MapData>) -> Option<MapData> {
+    fn block_iter_inner(&mut self, pos: IVec3, map_data: Option<MapData>) -> Option<(MapData, VoxelChunkID)> {
         if pos.x < self.root_size() as i32
             || pos.y < self.root_size() as i32
             || pos.z < self.root_size() as i32
@@ -107,7 +107,7 @@ impl GameWorld {
                         "Setting block in chunk {map_data_id:?} at local pos {local_pos:?}"
                     );
                     self.set_data_in_chunk(map_data_id, local_pos_idx, map_data.unwrap());
-                    return None;
+                    return Some((MapData::Padding, map_data_id));
                 }
 
                 // If the chunk is smaller, we need to go deeper
@@ -127,7 +127,7 @@ impl GameWorld {
                                 );
                                 self.set_data_in_chunk(map_data_id, local_pos_idx, data);
                             }
-                            None => return Some(data),
+                            None => return Some((data, map_data_id)),
                         },
                         _ => {
                             dbg!(
@@ -175,12 +175,12 @@ impl GameWorld {
         }
     }
 
-    pub fn set_block(&mut self, pos: IVec3, map_data: MapData) {
+    pub fn set_block(&mut self, pos: IVec3, map_data: MapData) -> Option<(MapData, VoxelChunkID)> {
         assert!(matches!(map_data, MapData::Block(_)));
-        self.block_iter_inner(pos, Some(map_data));
+        self.block_iter_inner(pos, Some(map_data))
     }
 
-    pub fn get_block(&self, pos: IVec3) -> Option<MapData> {
+    pub fn get_block(&self, pos: IVec3) -> Option<(MapData, VoxelChunkID)> {
         #[allow(invalid_reference_casting)]
         unsafe { UnsafeCell::from_mut(&mut *(self as *const GameWorld as *mut GameWorld)) }
             .get_mut()

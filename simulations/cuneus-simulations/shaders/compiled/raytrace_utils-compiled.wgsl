@@ -464,9 +464,6 @@ fn ray_hit(r2: Ray, beam: bool) -> HitRecord {
         out_c *= 0.5;
     }
 
-    // if (hit_sphere(vec3(0.,0.,1.), 0.5, r)) {
-    //     return vec3(1., 0., 0.);   
-    // }
     return valid_rec(out_c); // Idk why but using reinhard_tone_map makes everything much slower
 }
 
@@ -479,6 +476,6 @@ fn ray_color(r2: Ray) -> vec3<f32> {
 }
 
 fn ray_depth(r2: Ray) -> f32 {
-    return ray_hit(r2, true).t;
+    return hit_voxel(r2).t;
 }
 

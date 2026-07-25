@@ -6,7 +6,8 @@ edition = "2021"
 [dependencies]
 # iai-callgrind = "0.14.0"
 
-[profile.release]
+[profile.flamegraph]
+inherits = "release"
 debug = true
 overflow-checks = false
 opt-level = 3
