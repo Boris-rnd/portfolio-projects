@@ -102,13 +102,13 @@ fn write_small_chunk(
 }
 
 pub fn gen_world() -> GameWorld {
-    let mut start = Instant::now();
+    let start = Instant::now();
     let world = gen_world_size(1024);
 
     println!(
         "Realloc count: {} \t Realloc count chunks: {}\n Mem usage: {} MB",
-        &world.realloc_count,
-        &world.realloc_count_chunks,
+        world.realloc_count,
+        world.realloc_count_chunks,
         world.block_data.len() * std::mem::size_of::<MapData>() / 1024 / 1024
     );
     println!("Took {:?} to run", start.elapsed());

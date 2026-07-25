@@ -1,3 +1,4 @@
+#![allow(unused)]
 pub use glam::*;
 use noise::NoiseFn as _;
 use noise::{NoiseFn, Perlin};
@@ -118,7 +119,7 @@ impl GameWorld {
                             log::trace!("Got smaller chunk {id:?} with parent pos {parent_pos:?}");
                             map_data_id = id;
                         }
-                        MapData::Block(layer) => match map_data {
+                        MapData::Block(_) => match map_data {
                             Some(data) => {
                                 log::trace!(
                                     "Block data already exists at {:?}, replacing with {:?}",
@@ -146,7 +147,8 @@ impl GameWorld {
                     None => {
                         // If there is no data in the root chunk, we need to create a new chunk
                         match map_data {
-                            Some(data) => {
+                            // TODO: Use the map data and alloc new chunk, reusing the values
+                            Some(_) => {
                                 // Setting block
                                 map_data_id = self.alloc_new_chunk(local_pos_idx, map_data_id);
                             } // Get block
@@ -290,7 +292,7 @@ impl GameWorld {
         if new_array_array_idx != prev_array_array_idx {
             // Chunk is now too big, has to go to bigger map_data array
             let mut new_data = Vec::with_capacity(array_array_idx_to_size(new_array_array_idx));
-            for i in 0..(new_data.capacity() - new_data.len()) {
+            for _ in 0..(new_data.capacity() - new_data.len()) {
                 // Fill the vec up with padding to follow alignment
                 new_data.push(MapData::Padding.pack());
             }
@@ -327,7 +329,7 @@ impl GameWorld {
                 continue;
             }
 
-            let mut blk_data = &mut self.block_data[array_array_idx as usize];
+            let blk_data = &mut self.block_data[array_array_idx as usize];
 
             // let new_overflow_ele = *blk_data.get(end as usize - 1).unwrap();
             // blk_data[start as usize] = overflow_ele;
@@ -341,7 +343,7 @@ impl GameWorld {
             // //     );
             // // }
             // overflow_ele = new_overflow_ele;
-            let sub_data = blk_data[start as usize..end as usize].to_vec();
+            let _sub_data = blk_data[start as usize..end as usize].to_vec();
             // Move sub_data by one to the right, but needs to take into account the end of the allocated slice per chunk, so if something overflows, have to move to the bigger array_array_idx
             let prev_overflow = *blk_data.get(end as usize - 1).unwrap();
             unsafe {
@@ -559,20 +561,18 @@ impl GameWorld {
                 ((pos - parent_pos).div_euclid(IVec3::splat((chunk_size / CHUNK_SIZE32) as _)));
 
             // If the chunk is smaller, we need to go deeper
-            match self.get_data_in_chunk(map_data_id, local_pos.to_local_pos().unwrap()) {
-                Some(data) => match data {
-                    MapData::Chunk(id) => {
-                        map_data_id = VoxelChunkID::new(id);
-                        if depth == max_depth {
-                            return Some(data);
-                        }
+            let data = self.get_data_in_chunk(map_data_id, local_pos.to_local_pos().unwrap())?;
+            match data {
+                MapData::Chunk(id) => {
+                    map_data_id = VoxelChunkID::new(id);
+                    if depth == max_depth {
+                        return Some(data);
                     }
-                    MapData::Block(layer) => return Some(data),
-                    _ => {
-                        panic!("Unexpected map data type: {:?}", data);
-                    }
-                },
-                None => return None,
+                }
+                MapData::Block(_) => return Some(data),
+                _ => {
+                    panic!("Unexpected map data type: {:?}", data);
+                }
             }
         }
         log::error!("Maximum iterations reached, something is wrong with the chunk data structure");

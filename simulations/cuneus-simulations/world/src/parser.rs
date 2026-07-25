@@ -1,8 +1,12 @@
+use std::sync::{Arc, Mutex};
+
 use anyhow::Result;
 use dot_vox::*;
+use rayon::prelude::*;
 
 use super::*;
 use crate::*;
+
 
 fn iterate_vox_tree(vox_tree: &DotVoxData, mut fun: impl FnMut(&Model, &Vec3, &Rotation)) {
     match &vox_tree.scenes[0] {
@@ -25,6 +29,7 @@ fn iterate_vox_tree(vox_tree: &DotVoxData, mut fun: impl FnMut(&Model, &Vec3, &R
         }
     }
 }
+
 
 fn iterate_vox_tree_inner(
     vox_tree: &DotVoxData,
@@ -96,15 +101,52 @@ fn iterate_vox_tree_inner(
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq,)]
+struct BlockPos {
+    inner: IVec3,
+}
+fn block_pos(inner: IVec3) -> BlockPos {
+    BlockPos {inner}
+}
+impl std::hash::Hash for BlockPos {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        hash_pos(self.inner, 9).hash(state);
+    }
+}
+
+fn hash_pos(pos: IVec3, world_size_ln2: u64) -> u64 {
+    let x: u64 = pos.x.cast_unsigned() as u64;
+    let y: u64 = pos.y.cast_unsigned() as u64;
+    let z: u64 = pos.z.cast_unsigned() as u64;
+    // +pos.y as u64*stride+pos.z as u64*stride*stride
+    x | y<<world_size_ln2 | z<<(world_size_ln2*2)
+}
+fn unhash_pos(pos: u64, world_size_ln2: u64) -> IVec3 {
+    // let z = pos/(world_size*world_size) as u64;
+    // let y = (pos-z)/world_size as u64;
+    // let x = pos-z-y;
+    let x = (pos&((1<<world_size_ln2)-1)) as i32;
+    let y = ((pos>>world_size_ln2)&((1<<world_size_ln2)-1)) as i32;
+    let z = ((pos>>(world_size_ln2*2))&((1<<world_size_ln2)-1)) as i32;
+
+    ivec3(x,y,z)
+}
+
 pub fn load_world(path: &str) -> Result<GameWorld> {
     let vox_tree = dot_vox::load(path).map_err(|e| anyhow::anyhow!(e))?;
 
-    let mut world = GameWorld::new(4096, 8);
+    let world_size_ln2 = 10;
+    let mut world = GameWorld::new(1<<world_size_ln2, 8);
 
-    let mut voxels: hashbrown::HashMap<IVec3, u32> = Default::default();
+    // assert!(world_size_ln2<11, "TODO: Fallback to hashmap");
+    
+    let mut voxels: hashbrown::HashMap<BlockPos, u32> = hashbrown::HashMap::with_capacity_and_hasher(200_000, hashbrown::DefaultHashBuilder::default());
+    // let mut vh = Arc::new(Mutex::new(voxels));
+    // let mut voxels = Default::default();
     iterate_vox_tree(&vox_tree, |model, position, orientation| {
         let rotation_mat = Mat3::from_cols_array_2d(&orientation.to_cols_array_2d());
-
+        // Tried rayon, but made everything run 3x slower (with arc mutex) + in all cases most of the time is spent parsing the dot_vox and I don't want to improve the library
+        // model.voxels.par_iter().for_each(|voxel| {
         for voxel in &model.voxels {
             // Convert to centered coordinates
             let local_pos = vec3(
@@ -125,26 +167,30 @@ pub fn load_world(path: &str) -> Result<GameWorld> {
             let col = vox_tree.palette[voxel.i as usize];
             let col = col.r as u32 | ((col.g as u32) << 8u32) | ((col.b as u32) << 16u32);
 
+            
             if pos.min_element() < 0
                 || (pos.cmpge(IVec3::splat((world.root_size() - 1) as _))).any()
             {
-                continue;
+                return;
             }
-            voxels.insert(pos, col);
+            // vh.lock().unwrap().insert(block_pos(pos), col);
+            voxels.insert(block_pos(pos), col);
             // world.set_block(pos, MapData::Block(col));
-        }
-        for (pos, voxel) in &voxels.clone() {
-            if voxels.get(pos).is_none(){continue;}
+        };
+        // let mut voxels = vh.lock().unwrap();
+        for (pos, voxel) in voxels.clone() {
+            if voxels.get(&pos).is_none(){continue;}
+            let pos = pos.inner;
             // Create recursively all necessary parent chunks
-            let (_, chunk) = world.set_block(*pos, MapData::Block(*voxel)).unwrap();
+            let (_, chunk) = world.set_block(pos, MapData::Block(voxel)).unwrap();
             let chunk_pos = pos.div_euclid(IVec3::splat(4))*4;
             for lx in 0..CHUNK_SIZE as i32 {
                 for ly in 0..CHUNK_SIZE as i32 {
                     for lz in 0..CHUNK_SIZE as i32 {
                         let global_pos = ivec3(lx, ly, lz)+chunk_pos;
-                        if let Some(v) = voxels.get(&global_pos) {
+                        if let Some(v) = voxels.get(&block_pos(global_pos)) {
                             world.set_data_in_chunk(chunk, LocalPos::new(lx as _, ly as _, lz as _), MapData::Block(*v));
-                            voxels.remove(&global_pos);
+                            voxels.remove(&block_pos(global_pos));
                         }
                     }
                 }
