@@ -58,12 +58,13 @@ impl ShaderManager for Raytracer {
         let accum_frame_size = uvec2(800, 600);
 
         let passes = vec![
+            PassDescription::new("beam", &[]),
+            PassDescription::new("render", &["beam"]),
             // Update logic
             // PassDescription::new("update", &[]).with_workgroup_size([particle_count.div_ceil(64) as u32,1,1,]),
             // Render logic
             // PassDescription::new("clear_screen", &[]),
             // PassDescription::new("splat", &["update"]).with_workgroup_size([particle_count.div_ceil(64) as u32, 1, 1]),
-            PassDescription::new("render", &[]),
         ];
         info!("Loading world...");
         let world = world::parser::load_world("shaders/sponza.vox").unwrap();
@@ -107,6 +108,10 @@ impl ShaderManager for Raytracer {
             .with_storage_buffer(StorageBufferSpec::new(
                 "accum_texture",
                 4 * (1920 * 1080) as u64,
+            )) // Make the buffer as big as possible, then we will only write to a subset
+            .with_storage_buffer(StorageBufferSpec::new(
+                "max_depth", // For beam opt
+                4 * (1920 * 1080 / 4) as u64,
             )) // Make the buffer as big as possible, then we will only write to a subset
             // .with_atomic_buffer(1)
             .build();
@@ -214,11 +219,18 @@ impl ShaderManager for Raytracer {
                 //     self.params.reset = 1;
                 // }
                 ui.separator();
+                ui.shrink_width_to_current();
                 ShaderControls::render_controls_widget(ui, &mut controls_request);
             });
         });
 
         // Run compute passes
+        // self.compute_shader.dispatch_stage_with_workgroups(
+        //     &mut frame.encoder,
+        //     0,
+        //     [self.accum_frame_size.x.div_ceil(2), self.accum_frame_size.y.div_ceil(2), 1],
+        // );
+        // Full resolution
         self.compute_shader.dispatch(&mut frame.encoder, core);
 
         // Render to screen

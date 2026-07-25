@@ -28,62 +28,26 @@ include!("libs/voxel_utils.wgsl");
 @group(3) @binding(4) var<storage, read_write> block_data3: array<MapData>;
 
 
+@compute @workgroup_size(16, 16)
+fn beam(@builtin(global_invocation_id) id: vec3<u32>, @builtin (num_workgroups) num_wgs : vec3<u32>) {
+    // Disable beam if accumulating frames
+    if is_accumulating_frames() {return;}
+    //TODO Check if first invocation
 
-
-fn ray_color(r2: Ray) -> vec3<f32> {
-    var r = r2;
-    var out_c = vec3(0.);
-
-    // TODO: Beam splitter
-    let res_box = hit_box_t_rotated(r, vec3(10., 30., 1.), vec3(-40., 80., 400.), vec3(0., 0., degrees_to_radians(-45.)));
-    if (res_box != BOX_NO_HIT) {
-        let inter_point = r.orig + res_box * r.dir;
-        r.orig = inter_point;
-        r.dir.x *= 10.1;
-        // r.dir.y += wang_random_f32(u32(res_box));
-        r.dir = normalize(r.dir);
-        // return vec3(100., 1., 1.) - inter_point;
-    }
-
-    // First hit (main voxel at screen)
-    var res = hit_voxel(r);
-    if (res.t == BOX_NO_HIT) { // Not found
-        if all(res.p == vec3(1.)) {
-            return vec3(1., 0., 1.); // Error color
-        }
-        return skybox(r.dir);
-    } 
-    // else{return res.normal;}
-    out_c = res.color;
-    r.orig = at(r, res.t)+res.normal*0.01;
-    let sun_hit = hit_voxel(Ray(r.orig, normalize(vec3(0.1, 0.91141, 0.1141))));
-
-    let dir = r.dir+random_unit_vector()*0.5;
-    r.dir = normalize(dir);
-    
-    var bounces = 1;
-    if is_accumulating_frames() {bounces = 4;}
-    // else {return out_c;}
-    for (var b =1;b<bounces;b++) {
-        var res = hit_voxel(r);
-    
-        if (res.t == BOX_NO_HIT) { // Not found
-            break;
-        }
-        out_c *= res.color;
-        // out_c = (out_c*f32(b)+res.color)/f32(b+1);
-        r.orig = at(r, res.t)+res.normal*0.01;
-        let dir = reflect(r.dir, res.normal)+random_on_hemisphere(res.normal)*0.5;
-        r.dir = dir;
-    }
-    if sun_hit.t != BOX_NO_HIT { // No hit => light
-        out_c *= 0.5;
-    }
-
-    // if (hit_sphere(vec3(0.,0.,1.), 0.5, r)) {
-    //     return vec3(1., 0., 0.);   
+    let udims = textureDimensions(output)/BEAM_SCALE;
+    if (id.x >= udims.x || id.y >= udims.y) {return;}
+    // beam_store_depth(id.xy, 0.);
+    init_rng(id.xy, time_data.frame, u32(params.camera_pos_x));
+    let dims = vec2<f32>(udims*2);
+    var r = ray_from_screen_pos(id.xy, dims, num_wgs.xy);
+    // let prev_depth = beam_load_prev_depth(id.xy);
+    // if (prev_depth>=0.0 && prev_depth<1e29) {
+    //     r.orig = at(r, prev_depth-0.01);
     // }
-    return out_c; // Idk why but using reinhard_tone_map makes everything much slower
+
+    let depth = ray_depth(r);
+
+    beam_store_depth(id.xy, depth);
 }
 
 @compute @workgroup_size(16, 16)
@@ -100,7 +64,7 @@ fn render(@builtin(global_invocation_id) id: vec3<u32>) {
     let cam_center = vec3(params.camera_pos_x, params.camera_pos_y, params.camera_pos_z);
     let cam_dir = vec3(params.camera_dir_x, params.camera_dir_y, params.camera_dir_z);
 
-    let lookfrom = cam_center;     
+    var lookfrom = cam_center;     
     let lookat = cam_center + cam_dir;
     let vup = vec3(0., 1., 0.);
     let fov = degrees_to_radians(50.);
@@ -131,13 +95,22 @@ fn render(@builtin(global_invocation_id) id: vec3<u32>) {
     let focus = false;
     var samples_per_pixel = 1;
     if is_accumulating_frames() {samples_per_pixel = 2;}
-
     for (var i = 0; i<samples_per_pixel; i++) {
         let offset = vec2((f32(i))/(f32(samples_per_pixel)/2));
         // let offset = vec2(rand(-0.5, 0.5), rand(-0.5, 0.5))*0.1;
         let pixel_center = pixel00_loc + (uv.x+offset.x) * pixel_delta_u + (uv.y+offset.y) * pixel_delta_v;
         let ray_dir = normalize(pixel_center - lookfrom);
-        col += ray_color(Ray(lookfrom, ray_dir))/f32(samples_per_pixel);
+        var r = Ray(lookfrom, ray_dir);
+        let prev_depth = beam_load_prev_depth(id.xy);
+        if (prev_depth>0.0 && prev_depth<1e29) {
+            r.orig = at(r, prev_depth-0.01);
+            // col = vec3(prev_depth/100., prev_depth/1000., prev_depth/10000.);
+            break;
+        } else  {
+            col += skybox(r.dir);
+            break;
+        }
+        col += ray_color(r)/f32(samples_per_pixel);
     }
 
     if is_accumulating_frames() {

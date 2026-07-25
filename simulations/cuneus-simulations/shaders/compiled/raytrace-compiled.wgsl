@@ -284,6 +284,39 @@ fn set_previous_color(coords: vec2<u32>, color: vec3<f32>) {
     let compacted = r | (g<<8) | (b<<16);
     accum_frames[idx] = compacted;
 }
+
+// Beam (lower resolution => approximate depth)
+const BEAM_SCALE: u32=2;
+@group(3) @binding(6) var<storage, read_write> max_depth: array<f32>;
+fn beam_workgroup_dispatch_size_to_scale(w_size: vec2<u32>) -> u32 {
+    let full_scale = textureDimensions(output);
+    return u32(round(f32(full_scale.x)/f32(w_size.x))); // TODO: use floats to make sure no rounding errors + use x and y to verify
+}
+
+fn beam_local_coords_to_idx(coords: vec2<u32>, stride: u32) -> u32 {
+    return stride*coords.y+coords.x;
+}
+// Call this with full size coords (because next pass will have 2x resolution)
+fn beam_store_depth(scr_coords: vec2<u32>, depth: f32) {
+    let full_scale = textureDimensions(output);
+    let scale = BEAM_SCALE; 
+    // scr_coords are already low-res here, so use the low-res dimensions directly
+    max_depth[beam_local_coords_to_idx(scr_coords, full_scale.x / scale)] = depth;
+}
+fn beam_load_prev_depth(scr_coords: vec2<u32>) -> f32 {
+    let full_scale = textureDimensions(output);
+    let scale = BEAM_SCALE;
+    let low_res_coords = scr_coords / scale;
+    return max_depth[beam_local_coords_to_idx(low_res_coords, full_scale.x / scale)];
+}
+// fn beam_get_previous_depth(scr_coords: vec2<u32>, w_size: vec2<u32>) -> f32 {
+//     let scale = beam_workgroup_dispatch_size_to_scale(w_size);
+//     return max_depth[beam_local_coords_to_idx(scr_coords / scale, w_size)];
+// }
+// fn beam_set_previous_depth(scr_coords: vec2<u32>, w_size: vec2<u32>, depth: f32) {
+//     let scale = beam_workgroup_dispatch_size_to_scale(w_size);
+//     max_depth[beam_local_coords_to_idx(scr_coords / scale, w_size)] = depth;
+// }
 // ----- END: libs/accum_frames.wgsl --------
 // ----- START: libs/raytrace_utils.wgsl --------
 // Raytrace utility functions
@@ -310,6 +343,8 @@ fn ray_t_from_pos(ray: Ray, pos: vec3<f32>) -> f32 {
         return (pos.z - ray.orig.z) / ray.dir.z;
     }
 }
+const INVALID_BOX_HIT: f32 = 1e30;
+const BOX_NO_HIT: f32 = 2e30;
 // If t==INVALID_BOX_HIT, then hit record is invalid
 struct HitRecord {
     p: vec3<f32>,
@@ -325,6 +360,9 @@ fn invalid_rec() -> HitRecord {
 }
 fn to_far_away_rec() -> HitRecord {
     return HitRecord(vec3(0.), vec3(0.), BOX_NO_HIT, vec3(0.));
+}
+fn depth_rec(depth: f32) -> HitRecord {
+    return HitRecord(vec3(0.), vec3(0.), depth, vec3(0.));
 }
 
 // fn local_pos(chunk: VoxelChunk) -> u32 {
@@ -349,8 +387,6 @@ fn hit_sphere(center: vec3<f32>, radius: f32, r: Ray) -> bool {
     let discriminant = b * b - 4 * a * c;
     return (discriminant >= 0);
 }
-const INVALID_BOX_HIT: f32 = 1e30;
-const BOX_NO_HIT: f32 = 3 * 10e10;
 fn hit_box_t(ray: Ray, bmin: vec3<f32>, bmax: vec3<f32>) -> f32 {
     let t135 = (bmax - ray.orig) / ray.dir;
     let t246 = (bmin - ray.orig) / ray.dir;
@@ -534,8 +570,8 @@ fn hit_box_gen(ray: Ray, box: Box, chunk_idx: u32, chunk: VoxelChunk) -> HitReco
     // }
     return res;
 }
-
-fn hit_voxel(ray: Ray) -> HitRecord {
+fn hit_voxel(ray: Ray) -> HitRecord {return hit_voxel_depth(ray, 1e30);}
+fn hit_voxel_depth(ray: Ray, max_depth: f32) -> HitRecord {
     var miss = to_far_away_rec();
 
     // Initialise ray inside root chunk
@@ -648,6 +684,7 @@ fn hit_voxel(ray: Ray) -> HitRecord {
         let eps = (1e-3 * S) * (1. + f32(iter) / 10.);
         // let eps = (1e-4 * f32(child_size_i));
         posf += ray.dir * (tStep + eps);
+        if dot(posf,posf)>=max_depth*max_depth {return depth_rec(ray_t_from_pos(ray, posf));}
     }
     if iter >= max_iter {
         return to_far_away_rec();
@@ -655,6 +692,118 @@ fn hit_voxel(ray: Ray) -> HitRecord {
     // return valid_rec(vec3(0., 0., f32(iter)/500.));
     return miss;
 }
+
+fn ray_from_screen_pos(id: vec2<u32>, dims: vec2<f32>, num_wgs: vec2<u32>) -> Ray {
+    let invoke_size = num_wgs*16;
+    let scale = beam_workgroup_dispatch_size_to_scale(invoke_size);
+    var uv = (vec2<f32>(id.xy*2)/dims-vec2(0.5))*dims*2.;
+    uv.y = -uv.y;
+    
+    let cam_center = vec3(params.camera_pos_x, params.camera_pos_y, params.camera_pos_z);
+    let cam_dir = vec3(params.camera_dir_x, params.camera_dir_y, params.camera_dir_z);
+
+    var lookfrom = cam_center;     
+    let lookat = cam_center + cam_dir;
+    let vup = vec3(0., 1., 0.);
+    let fov = degrees_to_radians(50.);
+    let h = tan(fov / 2);
+    let focal_length = 2.0;
+    let viewport_height = 2. * h * focal_length;
+    let viewport_width = viewport_height * (dims.x/dims.y);
+
+    let w = normalize(lookfrom - lookat);
+    let u = normalize(cross(vup, w));
+    let v = cross(w, u);
+
+
+    let viewport_u = viewport_width * u; // Vector across viewport horizontal edge
+    let viewport_v = viewport_height * (v); // Vector down viewport vertical edge
+
+    let pixel_delta_u = viewport_u/dims.x;
+    let pixel_delta_v = viewport_v/dims.y;
+
+    let viewport_upper_left = lookfrom - focal_length * w - viewport_u / 2 - viewport_v / 2;
+    let pixel00_loc = viewport_upper_left + 0.5 * (pixel_delta_u + pixel_delta_v);
+    let pixel_center = pixel00_loc + uv.x * pixel_delta_u + uv.y * pixel_delta_v;
+    let ray_dir = normalize(pixel_center - lookfrom);
+    return Ray(lookfrom, ray_dir);
+}
+
+fn ray_hit(r2: Ray, beam: bool) -> HitRecord {
+    var r = r2;
+
+    // TODO: Beam splitter
+    let res_box = hit_box_t_rotated(r, vec3(10., 30., 1.), vec3(-40., 80., 400.), vec3(0., 0., degrees_to_radians(-45.)));
+    if (res_box != BOX_NO_HIT) {
+        let inter_point = r.orig + res_box * r.dir;
+        r.orig = inter_point;
+        r.dir.x *= 10.1;
+        // r.dir.y += wang_random_f32(u32(res_box));
+        r.dir = normalize(r.dir);
+        // return vec3(100., 1., 1.) - inter_point;
+    }
+
+    // First hit (main voxel at screen)
+    var res = hit_voxel(r);
+    if (res.t == BOX_NO_HIT) { // Not found
+        if all(res.p == vec3(1.)) {
+            return valid_rec(vec3(1., 0., 1.)); // Error color
+        }
+        // We return a Record which holds a infinite depth -> written to by beam -> read by renderer and automatically renders skybox
+        return res; // valid_rec(skybox(r.dir))
+    }
+    if beam {
+        // beam_store_depth(id, res.t);
+        // return valid_rec(vec3(1., 0.5, 1.));
+        // We return the record directly because we can't compute bounces from low resolution
+        return res;
+    }
+    // else{return valid_rec(res.normal);}
+    var out_c = res.color;
+    r.orig = at(r, res.t)+res.normal*0.01;
+    let sun_hit = hit_voxel(Ray(r.orig, normalize(vec3(0.1, 0.91141, 0.1141))));
+
+    let dir = r.dir+random_unit_vector()*0.5;
+    r.dir = normalize(dir);
+    
+    var bounces = 1;
+    if is_accumulating_frames() {bounces = 4;}
+    // else {return out_c;}
+    for (var b =1;b<bounces;b++) {
+        var res = hit_voxel(r);
+    
+        if (res.t == BOX_NO_HIT) { // Not found
+            break;
+        }
+        out_c *= res.color;
+        // out_c = (out_c*f32(b)+res.color)/f32(b+1);
+        r.orig = at(r, res.t)+res.normal*0.01;
+        let dir = reflect(r.dir, res.normal)+random_on_hemisphere(res.normal)*0.5;
+        r.dir = dir;
+    }
+    if sun_hit.t != BOX_NO_HIT { // No hit => light
+        out_c *= 0.5;
+    }
+
+    // if (hit_sphere(vec3(0.,0.,1.), 0.5, r)) {
+    //     return vec3(1., 0., 0.);   
+    // }
+    return valid_rec(out_c); // Idk why but using reinhard_tone_map makes everything much slower
+}
+
+fn ray_color(r2: Ray) -> vec3<f32> {
+    let rec = ray_hit(r2, false);
+    if rec.t>1e29 && all(rec.color==vec3(0.)) {
+        return skybox(r2.dir);
+    }
+    return rec.color;
+}
+
+fn ray_depth(r2: Ray) -> f32 {
+    return ray_hit(r2, true).t;
+}
+
+
 // ----- END: libs/raytrace_utils.wgsl --------
 // ----- START: libs/voxel_utils.wgsl --------
 // Utilities around voxels and world data handling
@@ -863,62 +1012,26 @@ fn root_chunk_size() -> u32 {
 @group(3) @binding(4) var<storage, read_write> block_data3: array<MapData>;
 
 
+@compute @workgroup_size(16, 16)
+fn beam(@builtin(global_invocation_id) id: vec3<u32>, @builtin (num_workgroups) num_wgs : vec3<u32>) {
+    // Disable beam if accumulating frames
+    if is_accumulating_frames() {return;}
+    //TODO Check if first invocation
 
-
-fn ray_color(r2: Ray) -> vec3<f32> {
-    var r = r2;
-    var out_c = vec3(0.);
-
-    // TODO: Beam splitter
-    let res_box = hit_box_t_rotated(r, vec3(10., 30., 1.), vec3(-40., 80., 400.), vec3(0., 0., degrees_to_radians(-45.)));
-    if (res_box != BOX_NO_HIT) {
-        let inter_point = r.orig + res_box * r.dir;
-        r.orig = inter_point;
-        r.dir.x *= 10.1;
-        // r.dir.y += wang_random_f32(u32(res_box));
-        r.dir = normalize(r.dir);
-        // return vec3(100., 1., 1.) - inter_point;
-    }
-
-    // First hit (main voxel at screen)
-    var res = hit_voxel(r);
-    if (res.t == BOX_NO_HIT) { // Not found
-        if all(res.p == vec3(1.)) {
-            return vec3(1., 0., 1.); // Error color
-        }
-        return skybox(r.dir);
-    } 
-    // else{return res.normal;}
-    out_c = res.color;
-    r.orig = at(r, res.t)+res.normal*0.01;
-    let sun_hit = hit_voxel(Ray(r.orig, normalize(vec3(0.1, 0.91141, 0.1141))));
-
-    let dir = r.dir+random_unit_vector()*0.5;
-    r.dir = normalize(dir);
-    
-    var bounces = 1;
-    if is_accumulating_frames() {bounces = 4;}
-    // else {return out_c;}
-    for (var b =1;b<bounces;b++) {
-        var res = hit_voxel(r);
-    
-        if (res.t == BOX_NO_HIT) { // Not found
-            break;
-        }
-        out_c *= res.color;
-        // out_c = (out_c*f32(b)+res.color)/f32(b+1);
-        r.orig = at(r, res.t)+res.normal*0.01;
-        let dir = reflect(r.dir, res.normal)+random_on_hemisphere(res.normal)*0.5;
-        r.dir = dir;
-    }
-    if sun_hit.t != BOX_NO_HIT { // No hit => light
-        out_c *= 0.5;
-    }
-
-    // if (hit_sphere(vec3(0.,0.,1.), 0.5, r)) {
-    //     return vec3(1., 0., 0.);   
+    let udims = textureDimensions(output)/BEAM_SCALE;
+    if (id.x >= udims.x || id.y >= udims.y) {return;}
+    // beam_store_depth(id.xy, 0.);
+    init_rng(id.xy, time_data.frame, u32(params.camera_pos_x));
+    let dims = vec2<f32>(udims*2);
+    var r = ray_from_screen_pos(id.xy, dims, num_wgs.xy);
+    // let prev_depth = beam_load_prev_depth(id.xy);
+    // if (prev_depth>=0.0 && prev_depth<1e29) {
+    //     r.orig = at(r, prev_depth-0.01);
     // }
-    return out_c; // Idk why but using reinhard_tone_map makes everything much slower
+
+    let depth = ray_depth(r);
+
+    beam_store_depth(id.xy, depth);
 }
 
 @compute @workgroup_size(16, 16)
@@ -935,7 +1048,7 @@ fn render(@builtin(global_invocation_id) id: vec3<u32>) {
     let cam_center = vec3(params.camera_pos_x, params.camera_pos_y, params.camera_pos_z);
     let cam_dir = vec3(params.camera_dir_x, params.camera_dir_y, params.camera_dir_z);
 
-    let lookfrom = cam_center;     
+    var lookfrom = cam_center;     
     let lookat = cam_center + cam_dir;
     let vup = vec3(0., 1., 0.);
     let fov = degrees_to_radians(50.);
@@ -966,13 +1079,22 @@ fn render(@builtin(global_invocation_id) id: vec3<u32>) {
     let focus = false;
     var samples_per_pixel = 1;
     if is_accumulating_frames() {samples_per_pixel = 2;}
-
     for (var i = 0; i<samples_per_pixel; i++) {
         let offset = vec2((f32(i))/(f32(samples_per_pixel)/2));
         // let offset = vec2(rand(-0.5, 0.5), rand(-0.5, 0.5))*0.1;
         let pixel_center = pixel00_loc + (uv.x+offset.x) * pixel_delta_u + (uv.y+offset.y) * pixel_delta_v;
         let ray_dir = normalize(pixel_center - lookfrom);
-        col += ray_color(Ray(lookfrom, ray_dir))/f32(samples_per_pixel);
+        var r = Ray(lookfrom, ray_dir);
+        let prev_depth = beam_load_prev_depth(id.xy);
+        if (prev_depth>0.0 && prev_depth<1e29) {
+            r.orig = at(r, prev_depth-0.01);
+            // col = vec3(prev_depth/100., prev_depth/1000., prev_depth/10000.);
+            break;
+        } else  {
+            col += skybox(r.dir);
+            break;
+        }
+        col += ray_color(r)/f32(samples_per_pixel);
     }
 
     if is_accumulating_frames() {
