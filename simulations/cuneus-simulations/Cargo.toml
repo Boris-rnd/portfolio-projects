@@ -1,10 +1,10 @@
 [workspace]
-members = ["world"]
+members = ["world", "shader"]
 
 [package]
 name = "cuneus-simulations"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [workspace.dependencies]
 hashbrown = {version="0.17.1"}
@@ -15,7 +15,7 @@ log = {version = "*", features=["std","release_max_level_info", "max_level_trace
 
 
 [dependencies]
-cuneus = {version = "0.6.2", default-features = false}
+cuneus = {path="cuneus", default-features = false}
 pico-args = "0.5.0"
 world = {path = "./world"}
 hashbrown = {workspace=true}
@@ -29,6 +29,16 @@ opt-level = 3
 
 [build-dependencies]
 wesl = "0.4.0"
+spirv-builder = {git = "https://github.com/Rust-GPU/rust-gpu.git"}
+
+# Compile build-dependencies in release mode with
+# the same settings as regular dependencies.
+[profile.release.build-override]
+opt-level = 3
+codegen-units = 16
+[profile.dev.build-override]
+opt-level = 3
+
 
 
 [profile.flamegraph]

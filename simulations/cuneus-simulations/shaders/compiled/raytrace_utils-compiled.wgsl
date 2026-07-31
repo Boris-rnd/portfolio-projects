@@ -231,11 +231,15 @@ fn hit_box_gen(ray: Ray, box: Box, chunk_idx: u32, chunk: VoxelChunk) -> HitReco
     res.normal = normal_uv.normal;
     res.t = t;
     // data = data%7;
-    let r = data & 0xFF;
-    let g = (data >> 8) & 0xFF;
-    let b = (data >> 16) & 0xFF;
-    let metallic = (data >> 24) & 1;
-    res.color = vec3(f32(r) / 255., f32(g) / 255., f32(b) / 255.) * light_intensity;
+    if data < 5 {
+        res.color = vec3(t/1., f32(chunk_idx)/500, normal_uv.uv.x);
+    } else {
+        let r = data & 0xFF;
+        let g = (data >> 8) & 0xFF;
+        let b = (data >> 16) & 0xFF;
+        let metallic = (data >> 24) & 1;
+        res.color = vec3(f32(r) / 255., f32(g) / 255., f32(b) / 255.) * light_intensity;
+    }
     // if data > 5 {
     //     res.color = vec3(f32(data) / 255., f32(data) / 255., f32(data) / 255.);
     // } else {
@@ -322,9 +326,9 @@ fn hit_voxel_depth(ray: Ray, max_depth: f32) -> HitRecord {
 
             let ty = curr_data & 3u;
             if ty == 1u { // Chunk, so we descend into it
-                if iter>100 {
-                    return valid_rec(vec3(1., 1., 0.));
-                }
+                // if iter>100 {
+                //     return valid_rec(vec3(1., 1., 0.));
+                // }
                 parent_pos_stack[curr_depth] = parent_pos + vec3<i32>(
                     local_pos.x * child_size_i,
                     local_pos.y * child_size_i,

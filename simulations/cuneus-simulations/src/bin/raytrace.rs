@@ -67,8 +67,8 @@ impl ShaderManager for Raytracer {
             // PassDescription::new("splat", &["update"]).with_workgroup_size([particle_count.div_ceil(64) as u32, 1, 1]),
         ];
         info!("Loading world...");
-        let world = world::parser::load_world("shaders/sponza.vox").unwrap();
-        // let mut world = world::GameWorld::new(4096, 8);
+        // let world = world::parser::load_world("shaders/sponza.vox").unwrap();
+        let mut world = world::gen_world_size(512);
         log::debug!(
             "Created {} chunks, with {} block reallocations and {} pad blocks and {} chunk reallocations",
             world.voxel_chunks.len(),
@@ -115,6 +115,15 @@ impl ShaderManager for Raytracer {
             )) // Make the buffer as big as possible, then we will only write to a subset
             // .with_atomic_buffer(1)
             .build();
+
+        // let shader = to_u32s(include_bytes!(concat!(env!("CARGO_TARGET_DIR"),"spirv-builder/spirv-unknown-spv1.6/release/deps/shader.spv")));
+        
+        // let compute_shader = ComputeShader::from_builder(
+        //     core,
+        //     wgpu::ShaderSource::SpirV(shader),
+        //     config,
+        // );
+        // compute_shader.set_custom_params(params, &core.queue);
         let compute_shader = create_compute_shader(
             core,
             config,

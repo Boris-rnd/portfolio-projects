@@ -31,17 +31,20 @@ pub fn create_compute_shader<T: bytemuck::Pod>(
             None => "",
         },
     };
+    let mut sp = path.split(".");
+    let name = sp.next().unwrap();
+    let ext = sp.last().unwrap_or("wgsl");
     let hot_reload_path = if caller_dir.is_empty() {
-        format!("../shaders/{}.wgsl", path)
+        format!("../shaders/{}.{}", name, ext)
     } else {
-        format!("{}/../shaders/{}.wgsl", caller_dir, path)
+        format!("{}/../shaders/{}.{}", caller_dir, name, ext)
     };
     config.hot_reload_path = Some(std::path::PathBuf::from(hot_reload_path.clone()));
     #[cfg(debug_assertions)]
     let compute_shader = ComputeShader::from_builder(
         core,
-        &std::fs::read_to_string(&hot_reload_path)
-            .expect(&format!("Failed reading {hot_reload_path}")),
+        wgpu::ShaderSource::Wgsl(std::fs::read_to_string(&hot_reload_path)
+            .expect(&format!("Failed reading {hot_reload_path}")).into()),
         config,
     );
     #[cfg(not(debug_assertions))]
@@ -54,4 +57,14 @@ pub fn create_compute_shader<T: bytemuck::Pod>(
     compute_shader.set_custom_params(params, &core.queue);
 
     compute_shader
+}
+use std::borrow::Cow;
+
+fn to_u32s(bytes: &[u8]) -> Cow<'_, [u32]> {
+    Cow::Owned(
+        bytes
+            .chunks_exact(4)
+            .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+            .collect(),
+    )
 }

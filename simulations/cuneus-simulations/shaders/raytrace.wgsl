@@ -105,7 +105,7 @@ fn render(@builtin(global_invocation_id) id: vec3<u32>) {
         if (prev_depth>0.0 && prev_depth<1e29) {
             r.orig = at(r, prev_depth-0.01);
             // col = vec3(prev_depth/100., prev_depth/1000., prev_depth/10000.);
-            // break;
+            break;
         } else  {
             col += skybox(r.dir);
             break;
